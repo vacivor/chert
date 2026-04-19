@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: client-demo
+  config:
+    import:
+      - "optional:chert://application.yml"
+      - "optional:chert://database.properties"
+
+server:
+  port: 8081
+
+chert:
+  client:
+    endpoint: http://localhost:8080
+    app-id: example-app
+    access-key: example-access-key
+    secret-key: example-secret-key
+    env: dev
+    request-timeout: 2s
+    refresh-interval: 5m
