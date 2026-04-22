@@ -62,8 +62,8 @@ class ConfigNotificationOpenApiControllerTests {
     when(applicationService.getByAppId("test-app")).thenReturn(app);
     when(applicationSecretService.findActiveByAccessKey("valid-key")).thenReturn(secret);
 
-    DeferredResult<ResponseEntity<String>> deferredResult = new DeferredResult<>();
-    when(configNotificationService.watch(eq("test-app"), eq("dev"), any())).thenReturn(deferredResult);
+    DeferredResult<ResponseEntity<ConfigNotificationResponse>> deferredResult = new DeferredResult<>();
+    when(configNotificationService.watch(eq("test-app"), eq("dev"), any(), eq(0L))).thenReturn(deferredResult);
 
     // 1. 发起长轮询请求
     MvcResult mvcResult = mockMvc.perform(get("/api/open/notifications")
@@ -71,15 +71,16 @@ class ConfigNotificationOpenApiControllerTests {
             .header("X-Chert-Secret-Key", "valid-secret")
             .param("appId", "test-app")
             .param("env", "dev")
+            .param("lastMessageId", "0")
             .param("configName", "app.yml"))
         .andReturn();
 
     // 2. 模拟通知触发
-    deferredResult.setResult(ResponseEntity.ok("app.yml"));
+    deferredResult.setResult(ResponseEntity.ok(new ConfigNotificationResponse(12L, java.util.List.of("app.yml"))));
 
     // 3. 验证长轮询结果
     mockMvc.perform(asyncDispatch(mvcResult))
         .andExpect(status().isOk())
-        .andExpect(content().string("app.yml"));
+        .andExpect(content().json("{\"lastMessageId\":12,\"configNames\":[\"app.yml\"]}"));
   }
 }

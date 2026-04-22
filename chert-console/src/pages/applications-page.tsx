@@ -1,46 +1,103 @@
 import {
   startTransition,
+  useEffect,
   useDeferredValue,
   useState,
   type ChangeEvent,
 } from 'react'
-import { ArrowDownAZ, ArrowUpAZ, SlidersHorizontal } from 'lucide-react'
+import {
+  AppWindow,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  RefreshCcw,
+  SlidersHorizontal,
+  TriangleAlert,
+} from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { applicationIntegrations } from '@/pages/data/application-integrations'
-import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
+import { listApplications, type Application } from '@/lib/applications'
 
-type AppType = 'all' | 'connected' | 'notConnected'
+type AppType = 'all' | 'described' | 'undescribed'
 type SortDirection = 'asc' | 'desc'
+type LoadState = 'loading' | 'ready' | 'error'
 
 const appTypeLabels: Record<AppType, string> = {
   all: 'All Apps',
-  connected: 'Connected',
-  notConnected: 'Not Connected',
+  described: 'Described',
+  undescribed: 'No Description',
 }
 
 export function ApplicationsPage() {
+  const [applications, setApplications] = useState<Application[]>([])
+  const [errorMessage, setErrorMessage] = useState('')
+  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [requestVersion, setRequestVersion] = useState(0)
   const [sort, setSort] = useState<SortDirection>('asc')
   const [appType, setAppType] = useState<AppType>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const deferredSearchTerm = useDeferredValue(searchTerm)
 
-  const filteredApps = applicationIntegrations
-    .toSorted((a, b) =>
-      sort === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name),
-    )
+  const filteredApps = applications
     .filter((app) =>
-      appType === 'connected'
-        ? app.connected
-        : appType === 'notConnected'
-          ? !app.connected
+      appType === 'described'
+        ? Boolean(app.description?.trim())
+        : appType === 'undescribed'
+          ? !app.description?.trim()
           : true,
     )
     .filter((app) =>
-      app.name.toLowerCase().includes(deferredSearchTerm.trim().toLowerCase()),
+      [app.name, app.appId, app.description ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(deferredSearchTerm.trim().toLowerCase()),
     )
+    .toSorted((a, b) =>
+      sort === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name),
+    )
+
+  useEffect(() => {
+    const abortController = new AbortController()
+
+    async function loadApplications() {
+      setLoadState('loading')
+      setErrorMessage('')
+
+      try {
+        const nextApplications = await listApplications({
+          signal: abortController.signal,
+        })
+
+        setApplications(nextApplications)
+        setLoadState('ready')
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Failed to load applications.',
+        )
+        setLoadState('error')
+      }
+    }
+
+    void loadApplications()
+
+    return () => {
+      abortController.abort()
+    }
+  }, [requestVersion])
 
   const handleSearch = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value
@@ -50,12 +107,16 @@ export function ApplicationsPage() {
     })
   }
 
+  const retryLoad = () => {
+    setRequestVersion((currentVersion) => currentVersion + 1)
+  }
+
   return (
     <section className='@7xl/content:mx-auto @7xl/content:w-full @7xl/content:max-w-7xl flex min-h-0 flex-1 flex-col'>
       <div>
-        <h1 className='text-2xl font-bold tracking-tight'>App Integrations</h1>
+        <h1 className='text-2xl font-bold tracking-tight'>Applications</h1>
         <p className='text-muted-foreground'>
-          Here&apos;s a list of your apps available for integration with the console.
+          Manage the applications registered in the Chert console.
         </p>
       </div>
 
@@ -74,8 +135,8 @@ export function ApplicationsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value='all'>All Apps</SelectItem>
-              <SelectItem value='connected'>Connected</SelectItem>
-              <SelectItem value='notConnected'>Not Connected</SelectItem>
+              <SelectItem value='described'>Described</SelectItem>
+              <SelectItem value='undescribed'>No Description</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -106,39 +167,103 @@ export function ApplicationsPage() {
 
       <Separator className='shadow-sm' />
 
-      <ul className='no-scrollbar faded-bottom grid min-h-0 flex-1 content-start gap-4 overflow-auto pt-4 pb-16 md:grid-cols-2 lg:grid-cols-3'>
-        {filteredApps.map((app) => (
-          <li
-            key={app.name}
-            className='rounded-lg border p-4 transition-shadow hover:shadow-md'
-          >
-            <div className='mb-8 flex items-center justify-between gap-3'>
-              <div className='flex size-10 items-center justify-center rounded-lg bg-muted p-2 text-foreground'>
-                <app.icon className='size-5' />
-              </div>
+      <div className='min-h-0 flex-1 pt-4'>
+        {loadState === 'loading' ? <ApplicationsSkeleton /> : null}
 
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                className={cn(
-                  app.connected &&
-                    'border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-                )}
+        {loadState === 'error' ? (
+          <Empty className='min-h-full border'>
+            <EmptyHeader>
+              <EmptyMedia variant='icon'>
+                <TriangleAlert />
+              </EmptyMedia>
+              <EmptyTitle>Unable to load applications</EmptyTitle>
+              <EmptyDescription>{errorMessage}</EmptyDescription>
+            </EmptyHeader>
+            <Button type='button' variant='outline' onClick={retryLoad}>
+              <RefreshCcw className='size-4' />
+              Retry
+            </Button>
+          </Empty>
+        ) : null}
+
+        {loadState === 'ready' && filteredApps.length === 0 ? (
+          <Empty className='min-h-full border'>
+            <EmptyHeader>
+              <EmptyMedia variant='icon'>
+                <AppWindow />
+              </EmptyMedia>
+              <EmptyTitle>No applications found</EmptyTitle>
+              <EmptyDescription>
+                Try adjusting the search term or filter to find a different application.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+
+        {loadState === 'ready' && filteredApps.length > 0 ? (
+          <ul className='no-scrollbar faded-bottom grid h-full content-start gap-4 overflow-auto pb-16 md:grid-cols-2 lg:grid-cols-3'>
+            {filteredApps.map((app) => (
+              <li
+                key={app.id}
+                className='rounded-lg border p-4 transition-shadow hover:shadow-md'
               >
-                {app.connected ? 'Connected' : 'Connect'}
-              </Button>
-            </div>
+                <div className='mb-8 flex items-center justify-between gap-3'>
+                  <div className='flex size-10 items-center justify-center rounded-lg bg-muted p-2 text-foreground'>
+                    <AppWindow className='size-5' />
+                  </div>
 
-            <div>
-              <h2 className='mb-1 font-semibold'>{app.name}</h2>
-              <p className='line-clamp-2 text-sm text-muted-foreground'>
-                {app.description}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ul>
+                  <Badge variant='secondary' className='font-mono text-[11px]'>
+                    {app.appId}
+                  </Badge>
+                </div>
+
+                <div>
+                  <h2 className='mb-1 font-semibold'>{app.name}</h2>
+                  <p className='line-clamp-2 min-h-10 text-sm text-muted-foreground'>
+                    {app.description?.trim() || 'No description provided yet.'}
+                  </p>
+                </div>
+
+                <div className='mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground'>
+                  <span>ID #{app.id}</span>
+                  <span>Updated {formatDateTime(app.updatedAt)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </section>
   )
+}
+
+function ApplicationsSkeleton() {
+  return (
+    <div className='grid h-full content-start gap-4 md:grid-cols-2 lg:grid-cols-3'>
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className='rounded-lg border p-4'>
+          <div className='mb-8 flex items-center justify-between gap-3'>
+            <Skeleton className='size-10 rounded-lg' />
+            <Skeleton className='h-5 w-20 rounded-full' />
+          </div>
+          <Skeleton className='mb-2 h-5 w-2/3' />
+          <Skeleton className='mb-2 h-4 w-full' />
+          <Skeleton className='h-4 w-5/6' />
+          <div className='mt-4 flex items-center justify-between gap-3'>
+            <Skeleton className='h-4 w-12' />
+            <Skeleton className='h-4 w-24' />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
 }

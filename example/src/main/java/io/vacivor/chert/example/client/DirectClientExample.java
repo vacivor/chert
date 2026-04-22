@@ -18,8 +18,8 @@ public final class DirectClientExample {
         Duration.ofSeconds(2),
         "example-app",
         "example-access-key",
+        "example-secret-key",
         "dev",
-        "application.yml",
         null,
         Duration.ofMinutes(5)));
 

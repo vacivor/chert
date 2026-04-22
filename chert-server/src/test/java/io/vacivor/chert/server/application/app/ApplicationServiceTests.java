@@ -13,6 +13,7 @@ import io.vacivor.chert.server.error.ConflictException;
 import io.vacivor.chert.server.error.NotFoundException;
 import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.infrastructure.persistence.app.ApplicationRepository;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -58,5 +59,26 @@ class ApplicationServiceTests {
           NotFoundException notFoundException = (NotFoundException) exception;
           assertThat(notFoundException.getErrorCode()).isEqualTo(ApplicationErrorCode.APPLICATION_NOT_FOUND);
         });
+  }
+
+  @Test
+  void shouldPopulateCreatedAtWhenCreatingApplication() {
+    Application application = new Application();
+    application.setAppId("config-center");
+    application.setName("Config Center");
+
+    when(applicationRepository.findByAppIdAndIsDeletedFalse("config-center")).thenReturn(Optional.empty());
+    when(applicationRepository.save(application)).thenAnswer(invocation -> {
+      Application saved = invocation.getArgument(0);
+      Instant now = Instant.now();
+      saved.setCreatedAt(now);
+      saved.setUpdatedAt(now);
+      return saved;
+    });
+
+    Application created = applicationService.create(application);
+
+    assertThat(created.getCreatedAt()).isNotNull();
+    assertThat(created.getUpdatedAt()).isNotNull();
   }
 }

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chert
+  labels:
+    app.kubernetes.io/name: chert
+    app.kubernetes.io/component: standalone
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: chert
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80

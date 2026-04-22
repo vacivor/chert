@@ -50,7 +50,7 @@ public class ConfigReleaseAdminController {
       @PathVariable Long environmentId,
       @RequestBody ConfigReleaseRequest request) {
     return ResponseEntity.ok(ConfigReleaseResponse.from(
-        configReleaseService.publish(resourceId, environmentId, request.comment())));
+        configReleaseService.publish(resourceId, environmentId, request.operator(), request.comment())));
   }
 
   @PostMapping("/{releaseId}/rollback")
@@ -60,7 +60,7 @@ public class ConfigReleaseAdminController {
       @PathVariable Long releaseId,
       @RequestBody ConfigReleaseRequest request) {
     return ResponseEntity.ok(ConfigReleaseResponse.from(
-        configReleaseService.rollback(releaseId, request.comment())));
+        configReleaseService.rollback(releaseId, request.operator(), request.comment())));
   }
 
   @GetMapping("/history")
@@ -77,7 +77,10 @@ public class ConfigReleaseAdminController {
       @RequestParam Long baseReleaseId,
       @RequestParam Long targetReleaseId) {
     ConfigDiffService.DiffResult result = configDiffService.diffReleases(baseReleaseId, targetReleaseId);
-    return ResponseEntity.ok(new ConfigDiffResponse(result.oldContent(), result.newContent()));
+    return ResponseEntity.ok(new ConfigDiffResponse(
+        result.oldContent(),
+        result.newContent(),
+        result.hasChanges()));
   }
 
 }

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { LayoutGrid } from 'lucide-react'
+import { Blocks, LayoutGrid, Users } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +18,16 @@ const navigationItems = [
     title: 'Applications',
     to: '/applications',
     icon: LayoutGrid,
+  },
+  {
+    title: 'Environments',
+    to: '/environments',
+    icon: Blocks,
+  },
+  {
+    title: 'Users',
+    to: '/users',
+    icon: Users,
   },
 ] as const
 

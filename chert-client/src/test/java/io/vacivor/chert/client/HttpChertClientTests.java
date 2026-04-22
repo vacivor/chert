@@ -120,6 +120,7 @@ class HttpChertClientTests {
     String query = uri.getQuery();
     assertThat(query).contains("appId=test-app");
     assertThat(query).contains("env=dev");
+    assertThat(query).contains("lastMessageId=0");
     assertThat(query).contains("configName=application");
     assertThat(query).contains("configName=other.yml");
 
@@ -143,7 +144,7 @@ class HttpChertClientTests {
 
     HttpResponse<String> pollResponse = mock(HttpResponse.class);
     when(pollResponse.statusCode()).thenReturn(200);
-    when(pollResponse.body()).thenReturn("application");
+    when(pollResponse.body()).thenReturn("{\"lastMessageId\":15,\"configNames\":[\"application\"]}");
 
     HttpResponse<String> fetchResponse = mock(HttpResponse.class);
     when(fetchResponse.statusCode()).thenReturn(200);

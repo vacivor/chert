@@ -68,7 +68,10 @@ public class ConfigContentAdminController {
       @PathVariable Long resourceId,
       @PathVariable Long environmentId) {
     return configDiffService.diffDraftWithLatestRelease(resourceId, environmentId)
-        .map(result -> new ConfigDiffResponse(result.oldContent(), result.newContent()))
+        .map(result -> new ConfigDiffResponse(
+            result.oldContent(),
+            result.newContent(),
+            result.hasChanges()))
         .map(ResponseEntity::ok)
         .orElse(ResponseEntity.notFound().build());
   }

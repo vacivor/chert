@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: chert-postgres
+    environment:
+      POSTGRES_DB: chert
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - chert-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chert"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  chert:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chert
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      CHERT_DB_URL: jdbc:postgresql://postgres:5432/chert
+      CHERT_DB_USERNAME: postgres
+      CHERT_DB_PASSWORD: postgres
+      CHERT_JPA_DDL_AUTO: update
+    ports:
+      - "8080:80"
+
+volumes:
+  chert-postgres-data:

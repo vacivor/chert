@@ -1,64 +1,119 @@
 package io.vacivor.chert.server.interfaces.openapi;
 
-import io.vacivor.chert.server.application.config.ReleaseMessageListener;
-import io.vacivor.chert.server.application.config.ReleaseMessageScanner;
+import io.vacivor.chert.server.config.ChertServerProperties;
 import io.vacivor.chert.server.domain.config.ReleaseMessage;
+import io.vacivor.chert.server.infrastructure.persistence.config.ReleaseMessageRepository;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import org.springframework.http.HttpStatus;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.async.DeferredResult;
 
 @Service
-public class ConfigNotificationService implements ReleaseMessageListener {
+public class ConfigNotificationService implements DisposableBean {
 
-  private record NotificationKey(String appId, String envCode, String configName) {}
+  private final ReleaseMessageRepository releaseMessageRepository;
+  private final ChertServerProperties properties;
+  private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4, runnable -> {
+    Thread thread = new Thread(runnable, "config-notification-watch");
+    thread.setDaemon(true);
+    return thread;
+  });
 
-  private final ConcurrentHashMap<NotificationKey, ConcurrentLinkedQueue<DeferredResult<ResponseEntity<String>>>> watchers = new ConcurrentHashMap<>();
+  public ConfigNotificationService(
+      ReleaseMessageRepository releaseMessageRepository,
+      ChertServerProperties properties) {
+    this.releaseMessageRepository = releaseMessageRepository;
+    this.properties = properties;
+  }
 
-  public ConfigNotificationService(ReleaseMessageScanner releaseMessageScanner) {
-    releaseMessageScanner.addMessageListener(this);
+  public DeferredResult<ResponseEntity<ConfigNotificationResponse>> watch(
+      String appId,
+      String envCode,
+      List<String> configNames,
+      Long lastMessageId) {
+    long cursor = lastMessageId != null ? Math.max(0L, lastMessageId) : 0L;
+    DeferredResult<ResponseEntity<ConfigNotificationResponse>> deferredResult =
+        new DeferredResult<>(properties.getLongPollingTimeout().toMillis());
+
+    ResponseEntity<ConfigNotificationResponse> immediateResponse =
+        scanNotifications(appId, envCode, configNames, cursor);
+    if (!immediateResponse.getBody().configNames().isEmpty()) {
+      deferredResult.setResult(immediateResponse);
+      return deferredResult;
+    }
+
+    AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+    Runnable pollTask = () -> {
+      if (deferredResult.isSetOrExpired()) {
+        ScheduledFuture<?> future = futureRef.get();
+        if (future != null) {
+          future.cancel(false);
+        }
+        return;
+      }
+
+      ResponseEntity<ConfigNotificationResponse> response =
+          scanNotifications(appId, envCode, configNames, cursor);
+      if (!response.getBody().configNames().isEmpty()) {
+        deferredResult.setResult(response);
+      }
+    };
+
+    ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(
+        pollTask,
+        properties.getReleaseMessageScanInterval().toMillis(),
+        properties.getReleaseMessageScanInterval().toMillis(),
+        TimeUnit.MILLISECONDS);
+    futureRef.set(future);
+
+    deferredResult.onCompletion(() -> {
+      ScheduledFuture<?> scheduledFuture = futureRef.get();
+      if (scheduledFuture != null) {
+        scheduledFuture.cancel(false);
+      }
+    });
+    deferredResult.onTimeout(() -> deferredResult.setResult(
+        ResponseEntity.ok(new ConfigNotificationResponse(cursor, List.of()))));
+
+    return deferredResult;
+  }
+
+  private ResponseEntity<ConfigNotificationResponse> scanNotifications(
+      String appId,
+      String envCode,
+      List<String> configNames,
+      long lastMessageId) {
+    if (configNames == null || configNames.isEmpty()) {
+      return ResponseEntity.ok(new ConfigNotificationResponse(lastMessageId, List.of()));
+    }
+
+    List<ReleaseMessage> messages =
+        releaseMessageRepository.findTop100ByAppIdAndEnvCodeAndNameInAndIdGreaterThanOrderByIdAsc(
+            appId, envCode, configNames, lastMessageId);
+    if (messages.isEmpty()) {
+      return ResponseEntity.ok(new ConfigNotificationResponse(lastMessageId, List.of()));
+    }
+
+    Set<String> changedConfigNames = new LinkedHashSet<>();
+    long latestMessageId = lastMessageId;
+    for (ReleaseMessage message : messages) {
+      changedConfigNames.add(message.getName());
+      latestMessageId = Math.max(latestMessageId, message.getId());
+    }
+
+    return ResponseEntity.ok(new ConfigNotificationResponse(latestMessageId, List.copyOf(changedConfigNames)));
   }
 
   @Override
-  public void handleMessage(ReleaseMessage message) {
-    notifyWatchers(message.getAppId(), message.getEnvCode(), message.getName());
-  }
-
-  public void notifyWatchers(String appId, String envCode, String configName) {
-    NotificationKey key = new NotificationKey(appId, envCode, configName);
-    ConcurrentLinkedQueue<DeferredResult<ResponseEntity<String>>> queue = watchers.get(key);
-    if (queue != null) {
-      DeferredResult<ResponseEntity<String>> result;
-      while ((result = queue.poll()) != null) {
-        if (!result.isSetOrExpired()) {
-          result.setResult(ResponseEntity.ok(configName));
-        }
-      }
-    }
-  }
-
-  public DeferredResult<ResponseEntity<String>> watch(String appId, String envCode, List<String> configNames) {
-    DeferredResult<ResponseEntity<String>> deferredResult = new DeferredResult<>(30000L); // 30s timeout
-
-    for (String configName : configNames) {
-      NotificationKey key = new NotificationKey(appId, envCode, configName);
-      watchers.computeIfAbsent(key, k -> new ConcurrentLinkedQueue<>()).add(deferredResult);
-    }
-
-    deferredResult.onCompletion(() -> {
-      for (String configName : configNames) {
-        NotificationKey key = new NotificationKey(appId, envCode, configName);
-        ConcurrentLinkedQueue<DeferredResult<ResponseEntity<String>>> queue = watchers.get(key);
-        if (queue != null) {
-          queue.remove(deferredResult);
-        }
-      }
-    });
-    deferredResult.onTimeout(() -> deferredResult.setResult(ResponseEntity.status(HttpStatus.NOT_MODIFIED).build()));
-
-    return deferredResult;
+  public void destroy() {
+    scheduler.shutdownNow();
   }
 }

@@ -20,7 +20,6 @@ import io.vacivor.chert.server.domain.environment.Environment;
 import io.vacivor.chert.server.infrastructure.persistence.config.ConfigReleaseHistoryRepository;
 import io.vacivor.chert.server.infrastructure.persistence.config.ConfigReleaseRepository;
 import io.vacivor.chert.server.infrastructure.persistence.config.ReleaseMessageRepository;
-import io.vacivor.chert.server.interfaces.openapi.ConfigNotificationService;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,8 +48,6 @@ class ConfigReleaseServiceTests {
   private ApplicationService applicationService;
   @Mock
   private EnvironmentService environmentService;
-  @Mock
-  private ConfigNotificationService configNotificationService;
   @Mock
   private ObjectMapper objectMapper;
 

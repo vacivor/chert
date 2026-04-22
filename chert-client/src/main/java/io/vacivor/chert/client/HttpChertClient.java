@@ -40,6 +40,7 @@ public final class HttpChertClient implements ChertClient {
   private final Clock clock;
   private final Map<String, List<ChertConfigListener>> listenerMap = new ConcurrentHashMap<>();
   private final Map<String, Instant> lastUpdatedMap = new ConcurrentHashMap<>();
+  private volatile long lastMessageId;
   private ScheduledExecutorService scheduler;
   private ExecutorService notificationExecutor;
 
@@ -78,9 +79,10 @@ public final class HttpChertClient implements ChertClient {
             .map(name -> "configName=" + URLEncoder.encode(name, StandardCharsets.UTF_8))
             .collect(Collectors.joining("&"));
 
-        String query = String.format("appId=%s&env=%s&%s",
+        String query = String.format("appId=%s&env=%s&lastMessageId=%s&%s",
             URLEncoder.encode(config.appId(), StandardCharsets.UTF_8),
             URLEncoder.encode(config.env(), StandardCharsets.UTF_8),
+            lastMessageId,
             configNameParams);
 
         URI uri = config.endpoint().resolve("/api/open/notifications?" + query);
@@ -92,12 +94,14 @@ public final class HttpChertClient implements ChertClient {
             .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 200) {
-          // Trigger immediate check for the changed configName
-          String changedConfigName = response.body();
-          if (changedConfigName != null && !changedConfigName.isBlank()) {
-            checkUpdate(changedConfigName);
-          } else {
-            checkUpdate();
+          NotificationPayload payload = objectMapper.readValue(response.body(), NotificationPayload.class);
+          if (payload.lastMessageId() != null) {
+            lastMessageId = Math.max(lastMessageId, payload.lastMessageId());
+          }
+          if (payload.configNames() != null && !payload.configNames().isEmpty()) {
+            for (String changedConfigName : payload.configNames()) {
+              checkUpdate(changedConfigName);
+            }
           }
         } else if (response.statusCode() == 304) {
           // No change, continue
@@ -350,6 +354,9 @@ public final class HttpChertClient implements ChertClient {
   }
 
   private record ServerPayload(String content, Instant updatedAt, ConfigType type, ConfigFormat format) {
+  }
+
+  private record NotificationPayload(Long lastMessageId, List<String> configNames) {
   }
 
 }

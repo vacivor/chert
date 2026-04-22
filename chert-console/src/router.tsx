@@ -8,7 +8,9 @@ import {
 } from '@tanstack/react-router'
 import { AppShell } from '@/components/layout/app-shell'
 import { ApplicationsPage } from '@/pages/applications-page'
+import { EnvironmentsPage } from '@/pages/environments-page'
 import { NotFoundPage } from '@/pages/not-found-page'
+import { UsersPage } from '@/pages/users-page'
 
 function RootRouteComponent() {
   return (
@@ -39,7 +41,24 @@ const applicationsRoute = createRoute({
   component: ApplicationsPage,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, applicationsRoute])
+const environmentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/environments',
+  component: EnvironmentsPage,
+})
+
+const usersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/users',
+  component: UsersPage,
+})
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  applicationsRoute,
+  environmentsRoute,
+  usersRoute,
+])
 
 export const router = createRouter({
   routeTree,

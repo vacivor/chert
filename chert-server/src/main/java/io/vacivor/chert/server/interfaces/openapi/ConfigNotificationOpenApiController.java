@@ -33,14 +33,15 @@ public class ConfigNotificationOpenApiController {
   }
 
   @GetMapping
-  public DeferredResult<ResponseEntity<String>> watchNotifications(
+  public DeferredResult<ResponseEntity<ConfigNotificationResponse>> watchNotifications(
       @RequestParam String appId,
       @RequestParam String env,
+      @RequestParam(defaultValue = "0") Long lastMessageId,
       @RequestParam(name = "configName") List<String> configNames,
       HttpServletRequest request) {
     Application application = applicationService.getByAppId(appId);
     checkAuth(application, request);
-    return configNotificationService.watch(appId, env, configNames);
+    return configNotificationService.watch(appId, env, configNames, lastMessageId);
   }
 
   private void checkAuth(Application application, HttpServletRequest request) {

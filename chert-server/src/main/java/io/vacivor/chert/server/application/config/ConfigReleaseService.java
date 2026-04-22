@@ -21,14 +21,13 @@ import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.infrastructure.persistence.config.ConfigReleaseHistoryRepository;
 import io.vacivor.chert.server.infrastructure.persistence.config.ConfigReleaseRepository;
 import io.vacivor.chert.server.infrastructure.persistence.config.ReleaseMessageRepository;
-import io.vacivor.chert.server.interfaces.openapi.ConfigNotificationService;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @Transactional(readOnly = true)
@@ -43,7 +42,6 @@ public class ConfigReleaseService {
   private final AuditLogService auditLogService;
   private final ApplicationService applicationService;
   private final EnvironmentService environmentService;
-  private final ConfigNotificationService configNotificationService;
   private final ObjectMapper objectMapper;
 
   public ConfigReleaseService(
@@ -56,7 +54,6 @@ public class ConfigReleaseService {
       AuditLogService auditLogService,
       ApplicationService applicationService,
       EnvironmentService environmentService,
-      ConfigNotificationService configNotificationService,
       ObjectMapper objectMapper) {
     this.configReleaseRepository = configReleaseRepository;
     this.configReleaseHistoryRepository = configReleaseHistoryRepository;
@@ -67,20 +64,27 @@ public class ConfigReleaseService {
     this.auditLogService = auditLogService;
     this.applicationService = applicationService;
     this.environmentService = environmentService;
-    this.configNotificationService = configNotificationService;
     this.objectMapper = objectMapper;
   }
 
   @Transactional
   public ConfigRelease publish(Long resourceId, Long environmentId, String comment) {
+    return publish(resourceId, environmentId, null, comment);
+  }
+
+  @Transactional
+  public ConfigRelease publish(Long resourceId, Long environmentId, String operator, String comment) {
     ConfigResource resource = configResourceService.get(resourceId);
     String snapshot = captureSnapshot(resource, environmentId);
+    Application application = applicationService.get(resource.getApplicationId());
+    Environment environment = environmentService.get(environmentId);
 
     Optional<ConfigRelease> latestReleaseOpt = configReleaseRepository
         .findTopByConfigResourceIdAndEnvironmentIdOrderByVersionDesc(resourceId, environmentId);
 
     long version = 1L;
     Long previousReleaseId = null;
+    String previousSnapshot = null;
     if (latestReleaseOpt.isPresent()) {
       ConfigRelease latestRelease = latestReleaseOpt.get();
       if (latestRelease.getSnapshot().equals(snapshot)) {
@@ -88,6 +92,7 @@ public class ConfigReleaseService {
       }
       version = latestRelease.getVersion() + 1;
       previousReleaseId = latestRelease.getId();
+      previousSnapshot = latestRelease.getSnapshot();
     }
 
     ConfigRelease release = new ConfigRelease();
@@ -112,10 +117,24 @@ public class ConfigReleaseService {
     configReleaseHistoryRepository.save(history);
 
     saveReleaseMessage(savedRelease);
-    notifyWatchers(resourceId, environmentId);
-
-    auditLogService.log(null, "CONFIG_RELEASE", "PUBLISH", savedRelease.getId().toString(),
-        "Resource: " + resourceId + ", Env: " + environmentId + ", Version: " + savedRelease.getVersion());
+    Map<String, Object> publishDetails = new LinkedHashMap<>();
+    publishDetails.put("appId", application.getAppId());
+    publishDetails.put("configName", resource.getName());
+    publishDetails.put("environment", environment.getCode());
+    publishDetails.put("reason", comment);
+    publishDetails.put("resourceId", resourceId);
+    publishDetails.put("environmentId", environmentId);
+    publishDetails.put("previousReleaseId", previousReleaseId);
+    publishDetails.put("releaseId", savedRelease.getId());
+    publishDetails.put("version", savedRelease.getVersion());
+    publishDetails.put("before", previousSnapshot);
+    publishDetails.put("after", savedRelease.getSnapshot());
+    auditLogService.log(
+        operator,
+        "CONFIG_RELEASE",
+        "PUBLISH",
+        savedRelease.getId().toString(),
+        toJsonDetails(publishDetails));
 
     return savedRelease;
   }
@@ -145,6 +164,11 @@ public class ConfigReleaseService {
 
   @Transactional
   public ConfigRelease rollback(Long targetReleaseId, String comment) {
+    return rollback(targetReleaseId, null, comment);
+  }
+
+  @Transactional
+  public ConfigRelease rollback(Long targetReleaseId, String operator, String comment) {
     ConfigRelease targetRelease = configReleaseRepository.findById(targetReleaseId)
         .orElseThrow(() -> new NotFoundException(ConfigReleaseErrorCode.CONFIG_RELEASE_NOT_FOUND,
             "Release not found: " + targetReleaseId));
@@ -156,6 +180,9 @@ public class ConfigReleaseService {
         .findTopByConfigResourceIdAndEnvironmentIdOrderByVersionDesc(resourceId, environmentId)
         .orElseThrow(() -> new NotFoundException(ConfigReleaseErrorCode.CONFIG_RELEASE_NOT_FOUND,
             "No latest release found"));
+    ConfigResource resource = configResourceService.get(resourceId);
+    Application application = applicationService.get(resource.getApplicationId());
+    Environment environment = environmentService.get(environmentId);
 
     if (targetRelease.getSnapshot().equals(latestRelease.getSnapshot())) {
       return latestRelease;
@@ -183,32 +210,25 @@ public class ConfigReleaseService {
     configReleaseHistoryRepository.save(history);
 
     saveReleaseMessage(savedRelease);
-    notifyWatchers(resourceId, environmentId);
-
-    auditLogService.log(null, "CONFIG_RELEASE", "ROLLBACK", savedRelease.getId().toString(),
-        "Original Release: " + targetReleaseId + ", New Version: " + savedRelease.getVersion());
+    Map<String, Object> rollbackDetails = new LinkedHashMap<>();
+    rollbackDetails.put("appId", application.getAppId());
+    rollbackDetails.put("configName", resource.getName());
+    rollbackDetails.put("environment", environment.getCode());
+    rollbackDetails.put("reason", comment);
+    rollbackDetails.put("rollbackFromReleaseId", latestRelease.getId());
+    rollbackDetails.put("rollbackToReleaseId", targetReleaseId);
+    rollbackDetails.put("releaseId", savedRelease.getId());
+    rollbackDetails.put("version", savedRelease.getVersion());
+    rollbackDetails.put("before", latestRelease.getSnapshot());
+    rollbackDetails.put("after", savedRelease.getSnapshot());
+    auditLogService.log(
+        operator,
+        "CONFIG_RELEASE",
+        "ROLLBACK",
+        savedRelease.getId().toString(),
+        toJsonDetails(rollbackDetails));
 
     return savedRelease;
-  }
-
-  private void notifyWatchers(Long resourceId, Long environmentId) {
-    ConfigResource resource = configResourceService.get(resourceId);
-    Application app = applicationService.get(resource.getApplicationId());
-    Environment env = environmentService.get(environmentId);
-    String appId = app.getAppId();
-    String envCode = env.getCode();
-    String configName = resource.getName();
-
-    if (TransactionSynchronizationManager.isActualTransactionActive()) {
-      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-        @Override
-        public void afterCommit() {
-          configNotificationService.notifyWatchers(appId, envCode, configName);
-        }
-      });
-    } else {
-      configNotificationService.notifyWatchers(appId, envCode, configName);
-    }
   }
 
   private void saveReleaseMessage(ConfigRelease release) {
@@ -225,6 +245,21 @@ public class ConfigReleaseService {
     message.setName(resource.getName());
     message.setCreatedAt(Instant.now());
     releaseMessageRepository.save(message);
+  }
+
+  private String toJsonDetails(Map<String, Object> details) {
+    try {
+      Map<String, Object> sanitized = new LinkedHashMap<>();
+      details.forEach((key, value) -> {
+        if (value != null) {
+          sanitized.put(key, value);
+        }
+      });
+      return objectMapper.writeValueAsString(sanitized);
+    } catch (JsonProcessingException exception) {
+      throw new ValidationException(CommonErrorCode.INVALID_PARAMETER, "details",
+          "Failed to serialize audit details");
+    }
   }
 
   public Optional<ConfigRelease> findLatest(Long resourceId, Long environmentId) {

@@ -11,4 +11,6 @@ public interface ConfigEntryRepository extends JpaRepository<ConfigEntry, Long> 
 
   Optional<ConfigEntry> findByConfigResourceIdAndEnvironmentIdAndKey(
       Long configResourceId, Long environmentId, String key);
+
+  void deleteByConfigResourceIdAndEnvironmentId(Long configResourceId, Long environmentId);
 }

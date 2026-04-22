@@ -31,7 +31,6 @@ public class ApplicationService {
           throw new ConflictException(ApplicationErrorCode.APPLICATION_APP_ID_DUPLICATED,
               "Application with appId '" + application.getAppId() + "' already exists");
         });
-    application.setUpdatedAt(Instant.now());
     application.setDeleted(false);
     Application saved = applicationRepository.save(application);
     auditLogService.log(null, "APPLICATION", "CREATE", 

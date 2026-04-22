@@ -154,7 +154,7 @@ class ConfigOpenApiControllerTests {
             .content("{\"key1\":\"value1\", \"key2\":\"value2\"}"))
         .andExpect(status().isOk());
 
-    verify(configEntryService, times(2)).save(any(ConfigEntry.class));
-    verify(configReleaseService).publish(eq(1L), eq(1L), any());
+    verify(configEntryService).replaceEntries(eq(1L), eq(1L), any());
+    verify(configReleaseService).publish(eq(1L), eq(1L), any(), any());
   }
 }

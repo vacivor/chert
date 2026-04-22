@@ -1,0 +1,14 @@
+.git
+.gradle
+.idea
+**/.DS_Store
+**/node_modules
+**/.tanstack
+PROJECT_PROGRESS.md
+**/build
+!chert-server/build/
+!chert-server/build/libs/
+!chert-server/build/libs/*.jar
+**/dist
+!chert-console/dist/
+!chert-console/dist/**

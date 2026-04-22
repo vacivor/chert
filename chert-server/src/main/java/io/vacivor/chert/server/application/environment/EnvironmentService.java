@@ -30,7 +30,6 @@ public class EnvironmentService {
           throw new ConflictException(EnvironmentErrorCode.ENVIRONMENT_CODE_DUPLICATED,
               "Environment code '" + environment.getCode() + "' already exists");
         });
-    environment.setUpdatedAt(Instant.now());
     environment.setDeleted(false);
     Environment saved = environmentRepository.save(environment);
     auditLogService.log(null, "ENVIRONMENT", "CREATE", 

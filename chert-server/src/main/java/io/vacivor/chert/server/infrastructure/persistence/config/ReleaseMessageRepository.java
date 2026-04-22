@@ -1,6 +1,8 @@
 package io.vacivor.chert.server.infrastructure.persistence.config;
 
 import io.vacivor.chert.server.domain.config.ReleaseMessage;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +13,9 @@ public interface ReleaseMessageRepository extends JpaRepository<ReleaseMessage, 
   ReleaseMessage findFirstByOrderByIdDesc();
 
   java.util.List<ReleaseMessage> findFirst100ByIdGreaterThanOrderByIdAsc(Long lastId);
+
+  List<ReleaseMessage> findTop100ByAppIdAndEnvCodeAndNameInAndIdGreaterThanOrderByIdAsc(
+      String appId, String envCode, Collection<String> names, Long lastId);
 
   long countByIdGreaterThan(Long lastId);
 

@@ -7,12 +7,9 @@ import io.vacivor.chert.server.application.config.ConfigEntryService;
 import io.vacivor.chert.server.application.config.ConfigReleaseService;
 import io.vacivor.chert.server.application.config.ConfigResourceService;
 import io.vacivor.chert.server.application.environment.EnvironmentService;
-import io.vacivor.chert.server.common.ConfigFormat;
 import io.vacivor.chert.server.common.ConfigType;
-import io.vacivor.chert.server.config.ChertServerProperties;
 import io.vacivor.chert.server.domain.app.Application;
 import io.vacivor.chert.server.domain.app.ApplicationSecret;
-import io.vacivor.chert.server.domain.config.ConfigEntry;
 import io.vacivor.chert.server.domain.config.ConfigRelease;
 import io.vacivor.chert.server.domain.config.ConfigResource;
 import io.vacivor.chert.server.domain.environment.Environment;
@@ -23,10 +20,7 @@ import io.vacivor.chert.server.error.NotFoundException;
 import io.vacivor.chert.server.error.UnauthorizedException;
 import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.error.ConfigResourceErrorCode;
-import io.vacivor.chert.server.infrastructure.persistence.config.ReleaseMessageRepository;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,8 +30,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.async.DeferredResult;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 @RestController
 @RequestMapping("/api/open/configs")
@@ -108,26 +100,13 @@ public class ConfigOpenApiController {
           "type", "Only ENTRIES type configuration can be updated via client");
     }
 
-    if (entries == null || entries.isEmpty()) {
-      return ResponseEntity.ok().build();
-    }
-
-    // Save or Update entries
-    for (java.util.Map.Entry<String, String> entry : entries.entrySet()) {
-      if (entry.getKey() == null || entry.getKey().isBlank()) {
-        continue; // Or throw ValidationException if we want to be strict
-      }
-      ConfigEntry configEntry = new ConfigEntry();
-      configEntry.setConfigResourceId(resource.getId());
-      configEntry.setEnvironmentId(environment.getId());
-      configEntry.setKey(entry.getKey());
-      configEntry.setValue(entry.getValue());
-      configEntry.setValueType("STRING"); // Default for client updates
-      configEntryService.save(configEntry);
-    }
-
-    // Publish new release
-    configReleaseService.publish(resource.getId(), environment.getId(), "Updated by client via OpenAPI");
+    java.util.Map<String, String> sanitizedEntries = entries != null ? entries : java.util.Map.of();
+    configEntryService.replaceEntries(resource.getId(), environment.getId(), sanitizedEntries);
+    configReleaseService.publish(
+        resource.getId(),
+        environment.getId(),
+        "OPEN_API:" + application.getAppId(),
+        "Updated by client via OpenAPI");
 
     return ResponseEntity.ok().build();
   }

@@ -31,7 +31,7 @@ public class ConfigDiffService {
     String oldContent = latestReleaseOpt.map(ConfigRelease::getSnapshot).orElse("");
     String newContent = draftOpt.map(ConfigContent::getContent).orElse("");
 
-    return Optional.of(new DiffResult(oldContent, newContent));
+    return Optional.of(new DiffResult(oldContent, newContent, !oldContent.equals(newContent)));
   }
 
   public DiffResult diffReleases(Long baseReleaseId, Long targetReleaseId) {
@@ -41,8 +41,8 @@ public class ConfigDiffService {
     String targetContent = configReleaseService.findById(targetReleaseId)
         .map(ConfigRelease::getSnapshot)
         .orElse("");
-    return new DiffResult(baseContent, targetContent);
+    return new DiffResult(baseContent, targetContent, !baseContent.equals(targetContent));
   }
 
-  public record DiffResult(String oldContent, String newContent) {}
+  public record DiffResult(String oldContent, String newContent, boolean hasChanges) {}
 }

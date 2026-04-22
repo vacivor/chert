@@ -11,6 +11,7 @@ import io.vacivor.chert.server.domain.environment.Environment;
 import io.vacivor.chert.server.error.ChertException;
 import io.vacivor.chert.server.error.EnvironmentErrorCode;
 import io.vacivor.chert.server.infrastructure.persistence.environment.EnvironmentRepository;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,5 +57,26 @@ class EnvironmentServiceTests {
           ChertException chertException = (ChertException) exception;
           assertThat(chertException.getErrorCode()).isEqualTo(EnvironmentErrorCode.ENVIRONMENT_NOT_FOUND);
         });
+  }
+
+  @Test
+  void shouldPopulateCreatedAtWhenCreatingEnvironment() {
+    Environment environment = new Environment();
+    environment.setCode("dev");
+    environment.setName("Development");
+
+    when(environmentRepository.findByCodeAndIsDeletedFalse("dev")).thenReturn(Optional.empty());
+    when(environmentRepository.save(environment)).thenAnswer(invocation -> {
+      Environment saved = invocation.getArgument(0);
+      Instant now = Instant.now();
+      saved.setCreatedAt(now);
+      saved.setUpdatedAt(now);
+      return saved;
+    });
+
+    Environment created = environmentService.create(environment);
+
+    assertThat(created.getCreatedAt()).isNotNull();
+    assertThat(created.getUpdatedAt()).isNotNull();
   }
 }
