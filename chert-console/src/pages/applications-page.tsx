@@ -66,12 +66,6 @@ type AppType = 'all' | 'described' | 'undescribed'
 type SortDirection = 'asc' | 'desc'
 type LoadState = 'loading' | 'ready' | 'error'
 
-const appTypeLabels: Record<AppType, string> = {
-  all: 'All Apps',
-  described: 'Described',
-  undescribed: 'No Description',
-}
-
 const sortLabels: Record<SortDirection, string> = {
   asc: 'Ascending',
   desc: 'Descending',
