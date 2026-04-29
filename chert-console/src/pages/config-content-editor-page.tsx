@@ -18,7 +18,14 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTheme } from '@/components/theme-provider'
 import { getApplication, type Application } from '@/lib/applications'
@@ -256,19 +263,17 @@ export function ConfigContentEditorPage() {
           <div className='flex min-w-48 flex-col gap-2'>
             <Label htmlFor='content-environment'>Environment</Label>
             <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
-              <SelectTrigger id='content-environment'>
-                {selectedEnvironmentId
-                  ? environments.find(
-                      (environment) => environment.id === Number(selectedEnvironmentId),
-                    )?.name ?? 'Environment'
-                  : 'Environment'}
+              <SelectTrigger id='content-environment' className='w-full'>
+                <SelectValue placeholder='Environment' />
               </SelectTrigger>
               <SelectContent>
-                {environments.map((environment) => (
-                  <SelectItem key={environment.id} value={String(environment.id)}>
-                    {environment.name} ({environment.code})
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {environments.map((environment) => (
+                    <SelectItem key={environment.id} value={String(environment.id)}>
+                      {environment.name} ({environment.code})
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>

@@ -24,10 +24,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -333,27 +331,43 @@ export function ApplicationsPage() {
             {filteredApps.map((app) => (
               <li key={app.id}>
                 <Card className='h-full transition-shadow hover:shadow-md'>
-                  <CardHeader>
-                    <div className='flex items-center gap-3'>
-                      <div className='flex size-10 items-center justify-center rounded-lg bg-muted p-2 text-foreground'>
+                  <CardHeader className='gap-0 pb-4'>
+                    <div className='flex items-start justify-between gap-4'>
+                      <div className='flex min-w-0 items-start gap-3'>
+                        <div className='flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background text-foreground'>
                         <AppWindow className='size-5' />
+                        </div>
+
+                        <div className='min-w-0'>
+                          <CardTitle className='truncate text-lg'>{app.name}</CardTitle>
+                          <CardDescription className='pt-1 font-normal text-sm'>
+                            {app.appId}
+                          </CardDescription>
+                        </div>
                       </div>
 
-                      <div className='min-w-0'>
-                        <CardTitle className='truncate'>{app.name}</CardTitle>
-                        <CardDescription className='font-mono text-xs'>{app.appId}</CardDescription>
+                      <div className='flex items-center gap-3'>
+                        <Badge variant='secondary' className='rounded-md px-2.5 py-1 text-xs'>
+                          #{app.id}
+                        </Badge>
+                        <Button type='button' variant='outline' size='sm' asChild>
+                          <Link
+                            to='/applications/$applicationId'
+                            params={{ applicationId: String(app.id) }}
+                          >
+                            Open
+                          </Link>
+                        </Button>
                       </div>
                     </div>
-
-                    <CardAction>
-                      <Badge variant='secondary'>#{app.id}</Badge>
-                    </CardAction>
                   </CardHeader>
 
-                  <CardContent className='flex flex-1 flex-col gap-4'>
+                  <CardContent className='flex flex-1 flex-col gap-5 pt-0'>
                     <p className='min-h-10 text-sm text-muted-foreground'>
                       {app.description?.trim() || 'No description provided yet.'}
                     </p>
+
+                    <Separator />
 
                     <div className='grid gap-3 text-sm'>
                       <div className='flex items-center gap-2 text-muted-foreground'>
@@ -378,20 +392,6 @@ export function ApplicationsPage() {
                       </div>
                     </div>
                   </CardContent>
-
-                  <CardFooter className='justify-between gap-3'>
-                    <span className='text-xs text-muted-foreground'>
-                      Updated {formatDateTime(app.updatedAt)}
-                    </span>
-                    <Button type='button' variant='outline' size='sm' asChild>
-                      <Link
-                        to='/applications/$applicationId'
-                        params={{ applicationId: String(app.id) }}
-                      >
-                        Open
-                      </Link>
-                    </Button>
-                  </CardFooter>
                 </Card>
               </li>
             ))}
@@ -422,13 +422,4 @@ function ApplicationsSkeleton() {
       ))}
     </div>
   )
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
 }
