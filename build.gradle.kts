@@ -13,6 +13,7 @@ allprojects {
 
     repositories {
         mavenCentral()
+        maven("https://nexus.281018.xyz/repository/maven-public/")
     }
 }
 
