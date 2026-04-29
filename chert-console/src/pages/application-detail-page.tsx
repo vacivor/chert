@@ -36,7 +36,14 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -305,14 +312,29 @@ export function ApplicationDetailPage() {
                 <div className='grid gap-4 md:grid-cols-2'>
                   <div className='flex flex-col gap-2'>
                     <Label htmlFor='resource-type'>Type</Label>
-                    <Select value={createType} onValueChange={(value) => setCreateType(value as ConfigType)}>
-                      <SelectTrigger id='resource-type'>Type</SelectTrigger>
+                    <Select
+                      value={createType}
+                      onValueChange={(value) => {
+                        const nextType = value as ConfigType
+                        setCreateType(nextType)
+                        if (nextType === 'ENTRIES') {
+                          setCreateFormat('NONE')
+                        } else if (createFormat === 'NONE') {
+                          setCreateFormat('YAML')
+                        }
+                      }}
+                    >
+                      <SelectTrigger id='resource-type' className='w-full'>
+                        <SelectValue placeholder='Type' />
+                      </SelectTrigger>
                       <SelectContent>
-                        {configTypeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {configTypeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </div>
@@ -323,13 +345,23 @@ export function ApplicationDetailPage() {
                       value={createFormat}
                       onValueChange={(value) => setCreateFormat(value as ConfigFormat)}
                     >
-                      <SelectTrigger id='resource-format'>Format</SelectTrigger>
+                      <SelectTrigger id='resource-format' className='w-full'>
+                        <SelectValue placeholder='Format' />
+                      </SelectTrigger>
                       <SelectContent>
-                        {configFormatOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          {configFormatOptions
+                            .filter((option) =>
+                              createType === 'ENTRIES'
+                                ? option.value === 'NONE'
+                                : option.value !== 'NONE',
+                            )
+                            .map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </div>

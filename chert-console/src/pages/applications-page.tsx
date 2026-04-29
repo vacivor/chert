@@ -49,7 +49,14 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/providers/auth-provider'
@@ -63,6 +70,11 @@ const appTypeLabels: Record<AppType, string> = {
   all: 'All Apps',
   described: 'Described',
   undescribed: 'No Description',
+}
+
+const sortLabels: Record<SortDirection, string> = {
+  asc: 'Ascending',
+  desc: 'Descending',
 }
 
 export function ApplicationsPage() {
@@ -248,34 +260,41 @@ export function ApplicationsPage() {
           />
 
           <Select value={appType} onValueChange={(value) => setAppType(value as AppType)}>
-            <SelectTrigger className='h-9 w-full sm:w-36'>
-              {appTypeLabels[appType]}
+            <SelectTrigger className='h-9 w-full sm:w-40'>
+              <SelectValue placeholder='Filter type' />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='all'>All Apps</SelectItem>
-              <SelectItem value='described'>Described</SelectItem>
-              <SelectItem value='undescribed'>No Description</SelectItem>
+              <SelectGroup>
+                <SelectItem value='all'>All Apps</SelectItem>
+                <SelectItem value='described'>Described</SelectItem>
+                <SelectItem value='undescribed'>No Description</SelectItem>
+              </SelectGroup>
             </SelectContent>
           </Select>
         </div>
 
         <Select value={sort} onValueChange={(value) => setSort(value as SortDirection)}>
-          <SelectTrigger className='h-9 w-16' aria-label='Sort applications'>
-            <SlidersHorizontal className='size-4.5' />
+          <SelectTrigger className='h-9 w-[152px]' aria-label='Sort applications'>
+            <div className='flex items-center gap-2'>
+              <SlidersHorizontal className='size-4.5 text-muted-foreground' />
+              <span>{sortLabels[sort]}</span>
+            </div>
           </SelectTrigger>
           <SelectContent align='end'>
-            <SelectItem value='asc'>
-              <div className='flex items-center gap-4'>
-                <ArrowUpAZ className='size-4' />
-                <span>Ascending</span>
-              </div>
-            </SelectItem>
-            <SelectItem value='desc'>
-              <div className='flex items-center gap-4'>
-                <ArrowDownAZ className='size-4' />
-                <span>Descending</span>
-              </div>
-            </SelectItem>
+            <SelectGroup>
+              <SelectItem value='asc'>
+                <div className='flex items-center gap-4'>
+                  <ArrowUpAZ className='size-4' />
+                  <span>Ascending</span>
+                </div>
+              </SelectItem>
+              <SelectItem value='desc'>
+                <div className='flex items-center gap-4'>
+                  <ArrowDownAZ className='size-4' />
+                  <span>Descending</span>
+                </div>
+              </SelectItem>
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
