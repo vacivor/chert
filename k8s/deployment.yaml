@@ -23,6 +23,9 @@ spec:
         - name: chert
           image: chert-standalone-image
           imagePullPolicy: Always
+          env:
+            - name: CHERT_DB_URL
+              value: jdbc:postgresql://10.10.1.141:5432/chert
           ports:
             - name: http
               containerPort: 80
