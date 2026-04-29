@@ -1,13 +1,15 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import {
+  ChevronRight,
   CircleAlert,
-  FileCode2,
+  Clock3,
+  File,
   LoaderCircle,
   RefreshCcw,
   Save,
-  SearchCode,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -17,7 +19,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -39,7 +40,10 @@ import { listConfigResources, type ConfigFormat, type ConfigResource } from '@/l
 import { listEnvironments, type Environment } from '@/lib/environments'
 
 type LoadState = 'loading' | 'ready' | 'error'
-const MonacoEditor = lazy(() => import('@monaco-editor/react'))
+
+const MonacoDiffEditor = lazy(() =>
+  import('@monaco-editor/react').then((module) => ({ default: module.DiffEditor })),
+)
 
 export function ConfigContentEditorPage() {
   const { applicationId, resourceId } = useParams({
@@ -87,9 +91,7 @@ export function ConfigContentEditorPage() {
         setEnvironments(nextEnvironments)
 
         if (nextEnvironments.length > 0) {
-          setSelectedEnvironmentId((current) =>
-            current || String(nextEnvironments[0].id),
-          )
+          setSelectedEnvironmentId((current) => current || String(nextEnvironments[0].id))
         }
 
         setLoadState('ready')
@@ -163,6 +165,16 @@ export function ConfigContentEditorPage() {
     return mapFormatToLanguage(resource.format)
   }, [resource])
 
+  const selectedEnvironment = useMemo(
+    () =>
+      selectedEnvironmentId
+        ? environments.find((environment) => environment.id === Number(selectedEnvironmentId)) ?? null
+        : null,
+    [environments, selectedEnvironmentId],
+  )
+
+  const diffSummary = useMemo(() => summarizeDiff(diff?.oldContent ?? '', content), [content, diff])
+
   const handleSave = async () => {
     if (!selectedEnvironmentId) {
       return
@@ -181,11 +193,11 @@ export function ConfigContentEditorPage() {
 
       setLatestSavedAt(saved.updatedAt)
       setSaveMessage('Draft saved.')
-      setDiff((current) => ({
-        oldContent: current?.oldContent ?? '',
+      setDiff({
+        oldContent: diff?.oldContent ?? '',
         newContent: content,
-        hasChanges: true,
-      }))
+        hasChanges: (diff?.oldContent ?? '') !== content,
+      })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save config.')
     } finally {
@@ -223,191 +235,178 @@ export function ConfigContentEditorPage() {
 
   return (
     <section className='flex min-h-0 flex-1 flex-col gap-6'>
-      <div className='flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between'>
-        <div className='space-y-3'>
-          <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-            <Link to='/applications' className='hover:text-foreground'>
-              Applications
-            </Link>
-            <span>/</span>
-            <Link
-              to='/applications/$applicationId'
-              params={{ applicationId: String(application.id) }}
-              className='hover:text-foreground'
-            >
-              {application.name}
-            </Link>
-            <span>/</span>
-            <span className='text-foreground'>{resource.name}</span>
-          </div>
-
-          <div className='flex items-start gap-4'>
-            <div className='flex size-12 items-center justify-center rounded-xl border bg-muted'>
-              <FileCode2 className='size-6' />
-            </div>
-            <div className='space-y-2'>
-              <div className='flex flex-wrap items-center gap-2'>
-                <h1 className='text-2xl font-bold tracking-tight'>{resource.name}</h1>
-                <span className='rounded-md border px-2 py-1 text-xs text-muted-foreground'>
-                  {resource.format}
-                </span>
-              </div>
-              <p className='text-sm text-muted-foreground'>
-                {resource.description?.trim() || 'Text config editor for this application resource.'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-          <div className='flex min-w-48 flex-col gap-2'>
-            <Label htmlFor='content-environment'>Environment</Label>
-            <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
-              <SelectTrigger id='content-environment' className='w-full'>
-                <SelectValue placeholder='Environment' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {environments.map((environment) => (
-                    <SelectItem key={environment.id} value={String(environment.id)}>
-                      {environment.name} ({environment.code})
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Button
-            type='button'
-            className='mt-auto'
-            disabled={!selectedEnvironmentId || isSaving}
-            onClick={() => void handleSave()}
+      <div className='space-y-4'>
+        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
+          <Link to='/applications' className='hover:text-foreground'>
+            Applications
+          </Link>
+          <ChevronRight className='size-4' />
+          <Link
+            to='/applications/$applicationId'
+            params={{ applicationId: String(application.id) }}
+            className='hover:text-foreground'
           >
-            {isSaving ? <LoaderCircle className='size-4 animate-spin' /> : <Save className='size-4' />}
-            Save Draft
-          </Button>
+            {application.name}
+          </Link>
+          <ChevronRight className='size-4' />
+          <span className='text-foreground'>{resource.name}</span>
+        </div>
+
+        <div className='space-y-2'>
+          <h1 className='text-3xl font-bold tracking-tight'>Edit Configuration</h1>
+          <p className='text-sm text-muted-foreground'>
+            Review changes and edit the text configuration using side-by-side diff.
+          </p>
         </div>
       </div>
 
-      <div className='grid min-h-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]'>
-        <Card className='min-h-0'>
-          <CardHeader>
-            <CardTitle>Text Editor</CardTitle>
-            <CardDescription>
-              Monaco is used here for raw text editing. Drafts are stored per environment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className='min-h-0'>
-            <div className='overflow-hidden rounded-xl border'>
-              <Suspense
-                fallback={
-                  <div className='flex h-[65vh] items-center justify-center text-sm text-muted-foreground'>
-                    Loading Monaco editor…
-                  </div>
-                }
-              >
-                <MonacoEditor
-                  height='65vh'
-                  language={monacoLanguage}
-                  theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
-                  value={content}
-                  onChange={(value) => setContent(value ?? '')}
-                  options={{
-                    automaticLayout: true,
-                    fontSize: 14,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    wordWrap: 'on',
-                  }}
-                />
-              </Suspense>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className='space-y-6'>
-          <Card>
-            <CardHeader>
-              <CardTitle>Draft Status</CardTitle>
-              <CardDescription>
-                Current draft state for the selected environment.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='space-y-3 text-sm'>
-              <StatusRow
-                label='Environment'
-                value={
-                  selectedEnvironmentId
-                    ? environments.find(
-                        (environment) => environment.id === Number(selectedEnvironmentId),
-                      )?.name ?? 'Unknown'
-                    : 'Not selected'
-                }
-              />
-              <StatusRow
-                label='Last saved'
-                value={latestSavedAt ? formatDateTime(latestSavedAt) : 'No draft saved yet'}
-              />
-              <StatusRow
-                label='Diff vs latest release'
-                value={diff?.hasChanges ? 'Has unpublished changes' : 'No detected changes'}
-              />
-              {saveMessage ? <p className='text-sm text-emerald-600'>{saveMessage}</p> : null}
-              {errorMessage ? <p className='text-sm text-destructive'>{errorMessage}</p> : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Diff Preview</CardTitle>
-              <CardDescription>
-                A lightweight preview against the latest published release.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='space-y-3'>
-              {!diff ? (
-                <div className='rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground'>
-                  No diff data yet for this environment.
+      <Card className='overflow-hidden rounded-2xl'>
+        <CardContent className='space-y-5 p-6'>
+          <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
+            <div className='flex min-w-0 items-start gap-4'>
+              <div className='flex size-14 shrink-0 items-center justify-center rounded-2xl border bg-muted/50'>
+                <File className='size-6' />
+              </div>
+              <div className='min-w-0 space-y-2'>
+                <div className='flex flex-wrap items-center gap-3'>
+                  <h2 className='truncate text-2xl font-semibold'>{resource.name}</h2>
+                  <Badge variant='secondary' className='rounded-full px-3 py-1 text-xs uppercase'>
+                    {resource.format}
+                  </Badge>
                 </div>
-              ) : (
-                <>
-                  <div className='rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground'>
-                    {diff.hasChanges
-                      ? 'The draft differs from the latest release.'
-                      : 'The current draft matches the latest release.'}
+                <p className='text-sm text-muted-foreground'>
+                  {resource.description?.trim() || 'Main text configuration for this application resource.'}
+                </p>
+                <div className='flex flex-wrap items-center gap-2 pt-1'>
+                  <div className='min-w-44'>
+                    <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
+                      <SelectTrigger id='content-environment' className='w-full'>
+                        <SelectValue placeholder='Environment' />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {environments.map((environment) => (
+                            <SelectItem key={environment.id} value={String(environment.id)}>
+                              {environment.code} · {environment.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  <Badge variant='outline'>Format: {resource.format}</Badge>
+                  <Badge variant='outline'>
+                    Status: {diffSummary.total > 0 ? 'Draft' : 'Synced'}
+                  </Badge>
+                </div>
+                <div className='flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-sm text-muted-foreground'>
+                  <span className='flex items-center gap-2'>
+                    <Clock3 className='size-4' />
+                    Last modified: {latestSavedAt ? formatDateTime(latestSavedAt) : 'No draft saved yet'}
+                  </span>
+                  {selectedEnvironment ? <span>Environment: {selectedEnvironment.code}</span> : null}
+                </div>
+              </div>
+            </div>
 
-                  <div className='space-y-2'>
-                    <div className='flex items-center gap-2 text-sm font-medium'>
-                      <SearchCode className='size-4' />
-                      Latest release
-                    </div>
-                    <pre className='max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground'>
-                      {diff.oldContent?.trim() || 'No released content yet.'}
-                    </pre>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            <div className='flex flex-wrap items-center gap-2 xl:justify-end'>
+              <Button
+                type='button'
+                variant='outline'
+                asChild
+              >
+                <Link to='/applications/$applicationId' params={{ applicationId: String(application.id) }}>
+                  Cancel
+                </Link>
+              </Button>
+              <Button
+                type='button'
+                disabled={!selectedEnvironmentId || isSaving}
+                onClick={() => void handleSave()}
+              >
+                {isSaving ? <LoaderCircle className='size-4 animate-spin' /> : <Save className='size-4' />}
+                Save Draft
+              </Button>
+            </div>
+          </div>
+
+          {(saveMessage || errorMessage) ? (
+            <div className='flex flex-col gap-2 text-sm'>
+              {saveMessage ? <p className='text-emerald-600'>{saveMessage}</p> : null}
+              {errorMessage ? <p className='text-destructive'>{errorMessage}</p> : null}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className='min-h-0 overflow-hidden rounded-2xl'>
+        <CardHeader className='border-b'>
+          <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
+            <div className='space-y-1'>
+              <CardTitle>Diff Editor</CardTitle>
+              <CardDescription>
+                Compare the latest release with the current draft and edit directly on the modified side.
+              </CardDescription>
+            </div>
+            <div className='flex flex-wrap items-center gap-2 text-sm'>
+              <Badge variant='outline'>Original: latest release</Badge>
+              <Badge variant='outline'>Modified: draft</Badge>
+              <Badge variant='secondary' className='rounded-full px-3 py-1'>
+                {diffSummary.total} changes
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className='min-h-0 p-0'>
+          <Suspense
+            fallback={
+              <div className='flex h-[68vh] items-center justify-center text-sm text-muted-foreground'>
+                Loading Monaco diff editor…
+              </div>
+            }
+          >
+            <MonacoDiffEditor
+              height='68vh'
+              language={monacoLanguage}
+              theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
+              original={diff?.oldContent ?? ''}
+              modified={content}
+              onMount={(editor) => {
+                const modifiedEditor = editor.getModifiedEditor()
+                const model = modifiedEditor.getModel()
+
+                model?.onDidChangeContent(() => {
+                  setContent(model.getValue())
+                })
+              }}
+              options={{
+                automaticLayout: true,
+                fontSize: 14,
+                minimap: { enabled: false },
+                renderSideBySide: true,
+                originalEditable: false,
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+              }}
+            />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      <Card className='rounded-2xl'>
+        <CardHeader>
+          <CardTitle>Change Summary</CardTitle>
+          <CardDescription>
+            Lightweight summary of the current draft compared with the latest release.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='flex flex-wrap items-center gap-3'>
+          <SummaryBadge tone='amber' label={`${diffSummary.modified} modified`} />
+          <SummaryBadge tone='emerald' label={`${diffSummary.added} added`} />
+          <SummaryBadge tone='rose' label={`${diffSummary.deleted} deleted`} />
+        </CardContent>
+      </Card>
     </section>
-  )
-}
-
-type StatusRowProps = {
-  label: string
-  value: string
-}
-
-function StatusRow({ label, value }: StatusRowProps) {
-  return (
-    <div className='flex items-start justify-between gap-4 rounded-lg border px-3 py-2'>
-      <span className='text-muted-foreground'>{label}</span>
-      <span className='text-right'>{value}</span>
-    </div>
   )
 }
 
@@ -416,18 +415,12 @@ function ContentEditorSkeleton() {
     <section className='flex min-h-0 flex-1 flex-col gap-6'>
       <div className='space-y-3'>
         <Skeleton className='h-4 w-48' />
-        <div className='flex items-start gap-4'>
-          <Skeleton className='size-12 rounded-xl' />
-          <div className='space-y-2'>
-            <Skeleton className='h-8 w-72' />
-            <Skeleton className='h-4 w-80' />
-          </div>
-        </div>
+        <Skeleton className='h-10 w-64' />
+        <Skeleton className='h-5 w-[520px]' />
       </div>
-      <div className='grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]'>
-        <Skeleton className='h-[720px] rounded-xl' />
-        <Skeleton className='h-[420px] rounded-xl' />
-      </div>
+      <Skeleton className='h-[220px] rounded-2xl' />
+      <Skeleton className='h-[760px] rounded-2xl' />
+      <Skeleton className='h-[140px] rounded-2xl' />
     </section>
   )
 }
@@ -438,6 +431,12 @@ function mapFormatToLanguage(format: ConfigFormat) {
       return 'json'
     case 'XML':
       return 'xml'
+    case 'YAML':
+      return 'yaml'
+    case 'PROPERTIES':
+      return 'ini'
+    case 'TOML':
+      return 'toml'
     default:
       return 'plaintext'
   }
@@ -450,4 +449,56 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function summarizeDiff(oldContent: string, newContent: string) {
+  const oldLines = oldContent.split('\n')
+  const newLines = newContent.split('\n')
+  const maxLength = Math.max(oldLines.length, newLines.length)
+
+  let added = 0
+  let deleted = 0
+  let modified = 0
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const oldLine = oldLines[index]
+    const newLine = newLines[index]
+
+    if (oldLine === undefined && newLine !== undefined) {
+      added += 1
+      continue
+    }
+
+    if (oldLine !== undefined && newLine === undefined) {
+      deleted += 1
+      continue
+    }
+
+    if ((oldLine ?? '') !== (newLine ?? '')) {
+      modified += 1
+    }
+  }
+
+  return {
+    added,
+    deleted,
+    modified,
+    total: added + deleted + modified,
+  }
+}
+
+type SummaryBadgeProps = {
+  label: string
+  tone: 'amber' | 'emerald' | 'rose'
+}
+
+function SummaryBadge({ label, tone }: SummaryBadgeProps) {
+  const className =
+    tone === 'amber'
+      ? 'border-amber-200 bg-amber-500/10 text-amber-700 dark:border-amber-900 dark:text-amber-300'
+      : tone === 'emerald'
+        ? 'border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:border-emerald-900 dark:text-emerald-300'
+        : 'border-rose-200 bg-rose-500/10 text-rose-700 dark:border-rose-900 dark:text-rose-300'
+
+  return <span className={`rounded-full border px-3 py-1 text-sm ${className}`}>{label}</span>
 }

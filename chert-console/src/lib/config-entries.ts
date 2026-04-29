@@ -6,6 +6,7 @@ export type ConfigEntry = {
   value: string
   valueType: string | null
   description: string | null
+  updatedAt: string
 }
 
 export type ConfigEntryPayload = {
