@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import { UserMenu } from '@/components/layout/user-menu'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
-import { TopNavigation } from '@/components/layout/top-navigation'
 import { cn } from '@/lib/utils'
 
 export function Header() {
@@ -20,7 +20,7 @@ export function Header() {
   return (
     <header
       className={cn(
-        'sticky top-0 z-50 h-16 w-[inherit]',
+        'sticky top-0 z-50 h-16',
         offset > 10 ? 'shadow' : 'shadow-none',
       )}
     >
@@ -31,21 +31,13 @@ export function Header() {
             'after:absolute after:inset-0 after:-z-10 after:bg-background/20 after:backdrop-blur-lg',
         )}
       >
-        <div className='flex min-w-0 items-center gap-6'>
-          <div className='flex items-center gap-3'>
-            <div className='flex size-9 items-center justify-center rounded-xl border bg-muted font-semibold'>
-              C
-            </div>
-            <div className='min-w-0'>
-              <p className='truncate text-sm font-semibold'>Chert Console</p>
-              <p className='truncate text-xs text-muted-foreground'>
-                Configuration governance
-              </p>
-            </div>
-          </div>
-
-          <div className='hidden md:block'>
-            <TopNavigation />
+        <div className='flex min-w-0 items-center gap-3'>
+          <SidebarTrigger className='size-9 rounded-xl border' />
+          <div className='min-w-0'>
+            <p className='truncate text-sm font-semibold'>Chert Console</p>
+            <p className='truncate text-xs text-muted-foreground'>
+              Configuration governance
+            </p>
           </div>
         </div>
 
@@ -53,10 +45,6 @@ export function Header() {
           <ThemeToggle />
           <UserMenu />
         </div>
-      </div>
-
-      <div className='border-t px-4 py-2 md:hidden'>
-        <TopNavigation />
       </div>
     </header>
   )
