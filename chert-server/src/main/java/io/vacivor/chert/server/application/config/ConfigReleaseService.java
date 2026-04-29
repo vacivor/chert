@@ -249,6 +249,7 @@ public class ConfigReleaseService {
     message.setConfigResourceId(release.getConfigResourceId());
     message.setEnvironmentId(release.getEnvironmentId());
     message.setAppId(app.getAppId());
+    message.setConfigId(resource.getName());
     message.setEnvCode(env.getCode());
     message.setName(resource.getName());
     message.setCreatedAt(Instant.now());

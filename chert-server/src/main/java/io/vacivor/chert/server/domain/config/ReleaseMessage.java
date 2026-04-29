@@ -23,6 +23,8 @@ public class ReleaseMessage {
   private Long environmentId;
   @Column(name = "app_id", nullable = false)
   private String appId;
+  @Column(name = "config_id")
+  private String configId;
   @Column(name = "env_code", nullable = false)
   private String envCode;
   @Column(name = "config_name", nullable = false)
@@ -72,6 +74,14 @@ public class ReleaseMessage {
 
   public String getEnvCode() {
     return envCode;
+  }
+
+  public String getConfigId() {
+    return configId;
+  }
+
+  public void setConfigId(String configId) {
+    this.configId = configId;
   }
 
   public void setEnvCode(String envCode) {
