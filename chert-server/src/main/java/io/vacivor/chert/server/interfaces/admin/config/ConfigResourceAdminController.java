@@ -6,6 +6,7 @@ import io.vacivor.chert.server.error.ConfigResourceErrorCode;
 import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigResourceCreateRequest;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigResourceResponse;
+import io.vacivor.chert.server.security.ApplicationAccessService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,15 +23,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConfigResourceAdminController {
 
   private final ConfigResourceService configResourceService;
+  private final ApplicationAccessService applicationAccessService;
 
-  public ConfigResourceAdminController(ConfigResourceService configResourceService) {
+  public ConfigResourceAdminController(
+      ConfigResourceService configResourceService,
+      ApplicationAccessService applicationAccessService) {
     this.configResourceService = configResourceService;
+    this.applicationAccessService = applicationAccessService;
   }
 
   @PostMapping
   public ResponseEntity<ConfigResourceResponse> create(
       @PathVariable Long appId,
       @RequestBody ConfigResourceCreateRequest request) {
+    applicationAccessService.requireApplicationManager(appId);
     if (request.configName() == null || request.configName().isBlank()) {
       throw new ValidationException(ConfigResourceErrorCode.CONFIG_RESOURCE_NAME_REQUIRED, "configName",
           "Config resource name cannot be blank");
@@ -55,19 +61,26 @@ public class ConfigResourceAdminController {
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<ConfigResourceResponse> get(@PathVariable Long id) {
+  public ResponseEntity<ConfigResourceResponse> get(
+      @PathVariable Long appId,
+      @PathVariable Long id) {
+    applicationAccessService.requireResourceMember(id);
     return ResponseEntity.ok(ConfigResourceResponse.from(configResourceService.get(id)));
   }
 
   @GetMapping
   public ResponseEntity<List<ConfigResourceResponse>> list(@PathVariable Long appId) {
+    applicationAccessService.requireApplicationMember(appId);
     return ResponseEntity.ok(configResourceService.listByApplication(appId).stream()
         .map(ConfigResourceResponse::from)
         .toList());
   }
 
   @DeleteMapping("/{id}")
-  public ResponseEntity<Void> delete(@PathVariable Long id) {
+  public ResponseEntity<Void> delete(
+      @PathVariable Long appId,
+      @PathVariable Long id) {
+    applicationAccessService.requireResourceManager(id);
     configResourceService.delete(id);
     return ResponseEntity.noContent().build();
   }

@@ -74,8 +74,29 @@ public class ConfigReleaseService {
 
   @Transactional
   public ConfigRelease publish(Long resourceId, Long environmentId, String operator, String comment) {
+    return publishSnapshot(
+        resourceId,
+        environmentId,
+        captureCurrentSnapshot(resourceId, environmentId),
+        operator,
+        comment,
+        "NORMAL",
+        "PUBLISH");
+  }
+
+  public String captureCurrentSnapshot(Long resourceId, Long environmentId) {
+    return captureSnapshot(configResourceService.get(resourceId), environmentId);
+  }
+
+  public ConfigRelease publishSnapshot(
+      Long resourceId,
+      Long environmentId,
+      String snapshot,
+      String operator,
+      String comment,
+      String releaseType,
+      String auditAction) {
     ConfigResource resource = configResourceService.get(resourceId);
-    String snapshot = captureSnapshot(resource, environmentId);
     Application application = applicationService.get(resource.getApplicationId());
     Environment environment = environmentService.get(environmentId);
 
@@ -88,7 +109,7 @@ public class ConfigReleaseService {
     if (latestReleaseOpt.isPresent()) {
       ConfigRelease latestRelease = latestReleaseOpt.get();
       if (latestRelease.getSnapshot().equals(snapshot)) {
-        return latestRelease; // 内容没变，直接返回
+        return latestRelease;
       }
       version = latestRelease.getVersion() + 1;
       previousReleaseId = latestRelease.getId();
@@ -100,7 +121,7 @@ public class ConfigReleaseService {
     release.setEnvironmentId(environmentId);
     release.setSnapshot(snapshot);
     release.setVersion(version);
-    release.setType("NORMAL");
+    release.setType(releaseType);
     release.setComment(comment);
     release.setCreatedAt(Instant.now());
     release.setUpdatedAt(Instant.now());
@@ -127,12 +148,13 @@ public class ConfigReleaseService {
     publishDetails.put("previousReleaseId", previousReleaseId);
     publishDetails.put("releaseId", savedRelease.getId());
     publishDetails.put("version", savedRelease.getVersion());
+    publishDetails.put("type", releaseType);
     publishDetails.put("before", previousSnapshot);
     publishDetails.put("after", savedRelease.getSnapshot());
     auditLogService.log(
         operator,
         "CONFIG_RELEASE",
-        "PUBLISH",
+        auditAction,
         savedRelease.getId().toString(),
         toJsonDetails(publishDetails));
 
@@ -188,28 +210,14 @@ public class ConfigReleaseService {
       return latestRelease;
     }
 
-    ConfigRelease rollbackRelease = new ConfigRelease();
-    rollbackRelease.setConfigResourceId(resourceId);
-    rollbackRelease.setEnvironmentId(environmentId);
-    rollbackRelease.setSnapshot(targetRelease.getSnapshot());
-    rollbackRelease.setVersion(latestRelease.getVersion() + 1);
-    rollbackRelease.setType("ROLLBACK");
-    rollbackRelease.setComment(comment);
-    rollbackRelease.setCreatedAt(Instant.now());
-    rollbackRelease.setUpdatedAt(Instant.now());
-    rollbackRelease.setDeleted(false);
-
-    ConfigRelease savedRelease = configReleaseRepository.save(rollbackRelease);
-
-    ConfigReleaseHistory history = new ConfigReleaseHistory();
-    history.setConfigResourceId(resourceId);
-    history.setEnvironmentId(environmentId);
-    history.setReleaseId(savedRelease.getId());
-    history.setPreviousReleaseId(latestRelease.getId());
-    history.setCreatedAt(Instant.now());
-    configReleaseHistoryRepository.save(history);
-
-    saveReleaseMessage(savedRelease);
+    ConfigRelease savedRelease = publishSnapshot(
+        resourceId,
+        environmentId,
+        targetRelease.getSnapshot(),
+        operator,
+        comment,
+        "ROLLBACK",
+        "ROLLBACK");
     Map<String, Object> rollbackDetails = new LinkedHashMap<>();
     rollbackDetails.put("appId", application.getAppId());
     rollbackDetails.put("configName", resource.getName());

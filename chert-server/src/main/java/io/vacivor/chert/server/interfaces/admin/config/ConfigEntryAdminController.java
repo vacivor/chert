@@ -6,6 +6,7 @@ import io.vacivor.chert.server.error.ConfigEntryErrorCode;
 import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigEntryRequest;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigEntryResponse;
+import io.vacivor.chert.server.security.ApplicationAccessService;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,15 +22,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConfigEntryAdminController {
 
   private final ConfigEntryService configEntryService;
+  private final ApplicationAccessService applicationAccessService;
 
-  public ConfigEntryAdminController(ConfigEntryService configEntryService) {
+  public ConfigEntryAdminController(
+      ConfigEntryService configEntryService,
+      ApplicationAccessService applicationAccessService) {
     this.configEntryService = configEntryService;
+    this.applicationAccessService = applicationAccessService;
   }
 
   @GetMapping
   public ResponseEntity<List<ConfigEntryResponse>> list(
       @PathVariable Long resourceId,
       @PathVariable Long environmentId) {
+    applicationAccessService.requireResourceMember(resourceId);
     return ResponseEntity.ok(configEntryService.list(resourceId, environmentId).stream()
         .map(ConfigEntryResponse::from)
         .toList());
@@ -40,6 +46,7 @@ public class ConfigEntryAdminController {
       @PathVariable Long resourceId,
       @PathVariable Long environmentId,
       @RequestBody ConfigEntryRequest request) {
+    applicationAccessService.requireResourceMember(resourceId);
     if (resourceId == null) {
       throw new ValidationException(ConfigEntryErrorCode.CONFIG_ENTRY_RESOURCE_ID_REQUIRED, "configResourceId", "Resource id cannot be null");
     }
@@ -63,7 +70,11 @@ public class ConfigEntryAdminController {
   }
 
   @DeleteMapping("/{entryId}")
-  public ResponseEntity<Void> delete(@PathVariable Long entryId) {
+  public ResponseEntity<Void> delete(
+      @PathVariable Long resourceId,
+      @PathVariable Long environmentId,
+      @PathVariable Long entryId) {
+    applicationAccessService.requireResourceMember(resourceId);
     configEntryService.delete(entryId);
     return ResponseEntity.noContent().build();
   }

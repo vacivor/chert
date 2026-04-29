@@ -1,20 +1,45 @@
+import { Link } from '@tanstack/react-router'
 import {
   startTransition,
-  useEffect,
   useDeferredValue,
+  useEffect,
   useState,
   type ChangeEvent,
+  type FormEvent,
 } from 'react'
 import {
   AppWindow,
   ArrowDownAZ,
   ArrowUpAZ,
+  CircleUserRound,
+  GitPullRequestArrow,
+  LoaderCircle,
+  Plus,
   RefreshCcw,
+  ShieldCheck,
   SlidersHorizontal,
   TriangleAlert,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   Empty,
   EmptyDescription,
@@ -23,10 +48,12 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { listApplications, type Application } from '@/lib/applications'
+import { useAuth } from '@/providers/auth-provider'
+import { createApplication, listApplications, type Application } from '@/lib/applications'
 
 type AppType = 'all' | 'described' | 'undescribed'
 type SortDirection = 'asc' | 'desc'
@@ -39,8 +66,12 @@ const appTypeLabels: Record<AppType, string> = {
 }
 
 export function ApplicationsPage() {
+  const { user } = useAuth()
   const [applications, setApplications] = useState<Application[]>([])
   const [errorMessage, setErrorMessage] = useState('')
+  const [createErrorMessage, setCreateErrorMessage] = useState('')
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreateSubmitting, setIsCreateSubmitting] = useState(false)
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [requestVersion, setRequestVersion] = useState(0)
   const [sort, setSort] = useState<SortDirection>('asc')
@@ -111,13 +142,100 @@ export function ApplicationsPage() {
     setRequestVersion((currentVersion) => currentVersion + 1)
   }
 
+  const handleCreateApplication = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!user) {
+      setCreateErrorMessage('You need an authenticated session to create an application.')
+      return
+    }
+
+    setCreateErrorMessage('')
+    setIsCreateSubmitting(true)
+
+    const formData = new FormData(event.currentTarget)
+
+    try {
+      const application = await createApplication({
+        appId: String(formData.get('appId') ?? ''),
+        name: String(formData.get('name') ?? ''),
+        description: String(formData.get('description') ?? ''),
+        ownerUserId: user.id,
+        maintainerUserId: user.id,
+        developerUserIds: [],
+      })
+
+      setApplications((current) =>
+        current.concat(application).toSorted((a, b) => a.name.localeCompare(b.name)),
+      )
+      setIsCreateOpen(false)
+      event.currentTarget.reset()
+    } catch (error) {
+      setCreateErrorMessage(
+        error instanceof Error ? error.message : 'Failed to create application.',
+      )
+    } finally {
+      setIsCreateSubmitting(false)
+    }
+  }
+
   return (
     <section className='@7xl/content:mx-auto @7xl/content:w-full @7xl/content:max-w-7xl flex min-h-0 flex-1 flex-col'>
-      <div>
-        <h1 className='text-2xl font-bold tracking-tight'>Applications</h1>
-        <p className='text-muted-foreground'>
-          Manage the applications registered in the Chert console.
-        </p>
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
+        <div>
+          <h1 className='text-2xl font-bold tracking-tight'>Applications</h1>
+          <p className='text-muted-foreground'>
+            Browse applications, then enter each application to manage resources and publish rules.
+          </p>
+        </div>
+
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogTrigger asChild>
+            <Button type='button'>
+              <Plus className='size-4' />
+              New Application
+            </Button>
+          </DialogTrigger>
+          <DialogContent className='sm:max-w-lg'>
+            <DialogHeader>
+              <DialogTitle>Create application</DialogTitle>
+              <DialogDescription>
+                The current user becomes both owner and maintainer. You can add more members later.
+              </DialogDescription>
+            </DialogHeader>
+            <form className='flex flex-col gap-4' onSubmit={handleCreateApplication}>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='application-name'>Name</Label>
+                <Input id='application-name' name='name' placeholder='Order Service' required />
+              </div>
+
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='application-app-id'>App ID</Label>
+                <Input id='application-app-id' name='appId' placeholder='order-service' required />
+              </div>
+
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='application-description'>Description</Label>
+                <Input
+                  id='application-description'
+                  name='description'
+                  placeholder='Handles checkout and order placement'
+                />
+              </div>
+
+              {createErrorMessage ? (
+                <p className='text-sm text-destructive'>{createErrorMessage}</p>
+              ) : null}
+
+              <DialogFooter>
+                <Button type='submit' disabled={isCreateSubmitting}>
+                  {isCreateSubmitting ? <LoaderCircle className='size-4 animate-spin' /> : null}
+                  Create
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className='my-4 flex items-end justify-between sm:my-0 sm:items-center'>
@@ -141,11 +259,8 @@ export function ApplicationsPage() {
           </Select>
         </div>
 
-        <Select
-          value={sort}
-          onValueChange={(value) => setSort(value as SortDirection)}
-        >
-          <SelectTrigger className='h-9 w-16' aria-label='Sort integrations'>
+        <Select value={sort} onValueChange={(value) => setSort(value as SortDirection)}>
+          <SelectTrigger className='h-9 w-16' aria-label='Sort applications'>
             <SlidersHorizontal className='size-4.5' />
           </SelectTrigger>
           <SelectContent align='end'>
@@ -203,31 +318,68 @@ export function ApplicationsPage() {
         {loadState === 'ready' && filteredApps.length > 0 ? (
           <ul className='no-scrollbar faded-bottom grid h-full content-start gap-4 overflow-auto pb-16 md:grid-cols-2 lg:grid-cols-3'>
             {filteredApps.map((app) => (
-              <li
-                key={app.id}
-                className='rounded-lg border p-4 transition-shadow hover:shadow-md'
-              >
-                <div className='mb-8 flex items-center justify-between gap-3'>
-                  <div className='flex size-10 items-center justify-center rounded-lg bg-muted p-2 text-foreground'>
-                    <AppWindow className='size-5' />
-                  </div>
+              <li key={app.id}>
+                <Card className='h-full transition-shadow hover:shadow-md'>
+                  <CardHeader>
+                    <div className='flex items-center gap-3'>
+                      <div className='flex size-10 items-center justify-center rounded-lg bg-muted p-2 text-foreground'>
+                        <AppWindow className='size-5' />
+                      </div>
 
-                  <Badge variant='secondary' className='font-mono text-[11px]'>
-                    {app.appId}
-                  </Badge>
-                </div>
+                      <div className='min-w-0'>
+                        <CardTitle className='truncate'>{app.name}</CardTitle>
+                        <CardDescription className='font-mono text-xs'>{app.appId}</CardDescription>
+                      </div>
+                    </div>
 
-                <div>
-                  <h2 className='mb-1 font-semibold'>{app.name}</h2>
-                  <p className='line-clamp-2 min-h-10 text-sm text-muted-foreground'>
-                    {app.description?.trim() || 'No description provided yet.'}
-                  </p>
-                </div>
+                    <CardAction>
+                      <Badge variant='secondary'>#{app.id}</Badge>
+                    </CardAction>
+                  </CardHeader>
 
-                <div className='mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground'>
-                  <span>ID #{app.id}</span>
-                  <span>Updated {formatDateTime(app.updatedAt)}</span>
-                </div>
+                  <CardContent className='flex flex-1 flex-col gap-4'>
+                    <p className='min-h-10 text-sm text-muted-foreground'>
+                      {app.description?.trim() || 'No description provided yet.'}
+                    </p>
+
+                    <div className='grid gap-3 text-sm'>
+                      <div className='flex items-center gap-2 text-muted-foreground'>
+                        <ShieldCheck className='size-4' />
+                        <span>
+                          Owner: <span className='text-foreground'>{app.owner.username}</span>
+                        </span>
+                      </div>
+                      <div className='flex items-center gap-2 text-muted-foreground'>
+                        <CircleUserRound className='size-4' />
+                        <span>
+                          Maintainer:{' '}
+                          <span className='text-foreground'>{app.maintainer.username}</span>
+                        </span>
+                      </div>
+                      <div className='flex items-center gap-2 text-muted-foreground'>
+                        <GitPullRequestArrow className='size-4' />
+                        <span>
+                          Developers:{' '}
+                          <span className='text-foreground'>{app.developers.length}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <CardFooter className='justify-between gap-3'>
+                    <span className='text-xs text-muted-foreground'>
+                      Updated {formatDateTime(app.updatedAt)}
+                    </span>
+                    <Button type='button' variant='outline' size='sm' asChild>
+                      <Link
+                        to='/applications/$applicationId'
+                        params={{ applicationId: String(app.id) }}
+                      >
+                        Open
+                      </Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
               </li>
             ))}
           </ul>

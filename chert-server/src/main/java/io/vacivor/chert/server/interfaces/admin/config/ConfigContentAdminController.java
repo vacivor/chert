@@ -8,6 +8,7 @@ import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigContentResponse;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigContentSaveRequest;
 import io.vacivor.chert.server.interfaces.dto.config.ConfigDiffResponse;
+import io.vacivor.chert.server.security.ApplicationAccessService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,18 +24,22 @@ public class ConfigContentAdminController {
 
   private final ConfigContentService configContentService;
   private final ConfigDiffService configDiffService;
+  private final ApplicationAccessService applicationAccessService;
 
   public ConfigContentAdminController(
       ConfigContentService configContentService,
-      ConfigDiffService configDiffService) {
+      ConfigDiffService configDiffService,
+      ApplicationAccessService applicationAccessService) {
     this.configContentService = configContentService;
     this.configDiffService = configDiffService;
+    this.applicationAccessService = applicationAccessService;
   }
 
   @GetMapping("/latest")
   public ResponseEntity<ConfigContentResponse> getLatest(
       @PathVariable Long resourceId,
       @PathVariable Long environmentId) {
+    applicationAccessService.requireResourceMember(resourceId);
     return configContentService.findLatest(resourceId, environmentId)
         .map(ConfigContentResponse::from)
         .map(ResponseEntity::ok)
@@ -46,6 +51,7 @@ public class ConfigContentAdminController {
       @PathVariable Long resourceId,
       @PathVariable Long environmentId,
       @RequestBody ConfigContentSaveRequest request) {
+    applicationAccessService.requireResourceMember(resourceId);
     if (resourceId == null) {
       throw new ValidationException(ConfigContentErrorCode.CONFIG_CONTENT_RESOURCE_ID_REQUIRED, "configResourceId", "Resource id cannot be null");
     }
@@ -67,6 +73,7 @@ public class ConfigContentAdminController {
   public ResponseEntity<ConfigDiffResponse> diff(
       @PathVariable Long resourceId,
       @PathVariable Long environmentId) {
+    applicationAccessService.requireResourceMember(resourceId);
     return configDiffService.diffDraftWithLatestRelease(resourceId, environmentId)
         .map(result -> new ConfigDiffResponse(
             result.oldContent(),

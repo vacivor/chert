@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.vacivor.chert.server.application.audit.AuditLogService;
+import io.vacivor.chert.server.application.user.UserService;
 import io.vacivor.chert.server.domain.app.Application;
 import io.vacivor.chert.server.error.ApplicationErrorCode;
 import io.vacivor.chert.server.error.ConflictException;
@@ -14,6 +15,7 @@ import io.vacivor.chert.server.error.NotFoundException;
 import io.vacivor.chert.server.error.ValidationException;
 import io.vacivor.chert.server.infrastructure.persistence.app.ApplicationRepository;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,8 @@ class ApplicationServiceTests {
 
   @Mock
   private AuditLogService auditLogService;
+  @Mock
+  private UserService userService;
 
   @InjectMocks
   private ApplicationService applicationService;
@@ -66,6 +70,12 @@ class ApplicationServiceTests {
     Application application = new Application();
     application.setAppId("config-center");
     application.setName("Config Center");
+    io.vacivor.chert.server.domain.user.User owner = new io.vacivor.chert.server.domain.user.User();
+    owner.setId(1L);
+    application.setOwner(owner);
+    io.vacivor.chert.server.domain.user.User maintainer = new io.vacivor.chert.server.domain.user.User();
+    maintainer.setId(2L);
+    application.setMaintainer(maintainer);
 
     when(applicationRepository.findByAppIdAndIsDeletedFalse("config-center")).thenReturn(Optional.empty());
     when(applicationRepository.save(application)).thenAnswer(invocation -> {
@@ -80,5 +90,52 @@ class ApplicationServiceTests {
 
     assertThat(created.getCreatedAt()).isNotNull();
     assertThat(created.getUpdatedAt()).isNotNull();
+  }
+
+  @Test
+  void shouldRejectDeveloperWhenDeveloperMatchesOwner() {
+    Application application = new Application();
+    application.setAppId("config-center");
+    application.setName("Config Center");
+    io.vacivor.chert.server.domain.user.User owner = new io.vacivor.chert.server.domain.user.User();
+    owner.setId(1L);
+    application.setOwner(owner);
+    io.vacivor.chert.server.domain.user.User maintainer = new io.vacivor.chert.server.domain.user.User();
+    maintainer.setId(2L);
+    application.setMaintainer(maintainer);
+    application.setDevelopers(new LinkedHashSet<>(java.util.Set.of(owner)));
+
+    when(applicationRepository.findByAppIdAndIsDeletedFalse("config-center")).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> applicationService.create(application))
+        .isInstanceOf(ValidationException.class)
+        .extracting(exception -> ((ValidationException) exception).getErrorCode())
+        .isEqualTo(ApplicationErrorCode.APPLICATION_DEVELOPER_CONFLICT);
+  }
+
+  @Test
+  void shouldRemoveTransferredOwnerFromDevelopers() {
+    Application application = new Application();
+    application.setId(1L);
+    application.setAppId("config-center");
+    application.setName("Config Center");
+    io.vacivor.chert.server.domain.user.User currentOwner = new io.vacivor.chert.server.domain.user.User();
+    currentOwner.setId(1L);
+    application.setOwner(currentOwner);
+    io.vacivor.chert.server.domain.user.User maintainer = new io.vacivor.chert.server.domain.user.User();
+    maintainer.setId(2L);
+    application.setMaintainer(maintainer);
+    io.vacivor.chert.server.domain.user.User newOwner = new io.vacivor.chert.server.domain.user.User();
+    newOwner.setId(3L);
+    application.setDevelopers(new LinkedHashSet<>(java.util.Set.of(newOwner)));
+
+    when(applicationRepository.findById(1L)).thenReturn(Optional.of(application));
+    when(applicationRepository.save(application)).thenAnswer(invocation -> invocation.getArgument(0));
+
+    Application saved = applicationService.transferOwner(1L, newOwner);
+
+    assertThat(saved.getOwner().getId()).isEqualTo(3L);
+    assertThat(saved.getDevelopers()).extracting(io.vacivor.chert.server.domain.user.User::getId)
+        .doesNotContain(3L);
   }
 }
