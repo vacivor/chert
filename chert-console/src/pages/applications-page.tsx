@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useHeaderBreadcrumbs } from '@/components/layout/header-breadcrumbs'
 import { useAuth } from '@/providers/auth-provider'
 import { createApplication, listApplications, type Application } from '@/lib/applications'
 
@@ -70,6 +71,7 @@ const sortLabels: Record<SortDirection, string> = {
 }
 
 export function ApplicationsPage() {
+  useHeaderBreadcrumbs([{ label: 'Applications' }])
   const { user } = useAuth()
   const [applications, setApplications] = useState<Application[]>([])
   const [errorMessage, setErrorMessage] = useState('')
@@ -330,12 +332,12 @@ export function ApplicationsPage() {
           <ul className='no-scrollbar faded-bottom grid h-full content-start gap-4 overflow-auto pb-16 md:grid-cols-2 lg:grid-cols-3'>
             {filteredApps.map((app) => (
               <li key={app.id}>
-                <Card className='h-full transition-shadow hover:shadow-md'>
+                <Card className='h-full rounded-2xl border border-border/60 ring-0 shadow-none transition-colors hover:border-border'>
                   <CardHeader className='gap-0 pb-4'>
                     <div className='flex items-start justify-between gap-4'>
                       <div className='flex min-w-0 items-start gap-3'>
-                        <div className='flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background text-foreground'>
-                        <AppWindow className='size-5' />
+                        <div className='flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/50 bg-background text-foreground'>
+                          <AppWindow className='size-5' />
                         </div>
 
                         <div className='min-w-0'>
@@ -347,7 +349,7 @@ export function ApplicationsPage() {
                       </div>
 
                       <div className='flex items-center gap-3'>
-                        <Badge variant='secondary' className='rounded-md px-2.5 py-1 text-xs'>
+                        <Badge variant='secondary' className='rounded-full px-2.5 py-1 text-xs'>
                           #{app.id}
                         </Badge>
                         <Button type='button' variant='outline' size='sm' asChild>
@@ -406,9 +408,9 @@ function ApplicationsSkeleton() {
   return (
     <div className='grid h-full content-start gap-4 md:grid-cols-2 lg:grid-cols-3'>
       {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className='rounded-lg border p-4'>
+        <div key={index} className='rounded-2xl border p-4'>
           <div className='mb-8 flex items-center justify-between gap-3'>
-            <Skeleton className='size-10 rounded-lg' />
+            <Skeleton className='size-10 rounded-xl' />
             <Skeleton className='h-5 w-20 rounded-full' />
           </div>
           <Skeleton className='mb-2 h-5 w-2/3' />

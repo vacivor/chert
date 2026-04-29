@@ -19,6 +19,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { useHeaderBreadcrumbs } from '@/components/layout/header-breadcrumbs'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
@@ -30,6 +31,7 @@ type LoadState = 'loading' | 'ready' | 'error'
 type RoleOption = 'USER' | 'SUPER_ADMIN'
 
 export function UsersPage() {
+  useHeaderBreadcrumbs([{ label: 'Users' }])
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<ConsoleUser[]>([])
   const [errorMessage, setErrorMessage] = useState('')

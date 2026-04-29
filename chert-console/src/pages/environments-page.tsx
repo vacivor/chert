@@ -21,11 +21,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useHeaderBreadcrumbs } from '@/components/layout/header-breadcrumbs'
 import { createEnvironment, listEnvironments, type Environment } from '@/lib/environments'
 
 type LoadState = 'loading' | 'ready' | 'error'
 
 export function EnvironmentsPage() {
+  useHeaderBreadcrumbs([{ label: 'Environments' }])
   const [environments, setEnvironments] = useState<Environment[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [isCreateOpen, setIsCreateOpen] = useState(false)

@@ -1,23 +1,28 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import {
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Database,
-  FileCode2,
+  File,
+  History,
   LoaderCircle,
   PencilLine,
   Plus,
-  RefreshCcw,
+  RotateCcw,
   Search,
-  Settings2,
-  ShieldCheck,
-  Trash2,
-  TriangleAlert,
-  UsersRound,
+  UploadCloud,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { CodeBlock } from '@/components/ui/code'
 import {
   Dialog,
   DialogContent,
@@ -25,48 +30,29 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useAuth } from '@/providers/auth-provider'
 import {
-  getApplication,
-  getApplicationPublishPolicy,
-  saveApplicationPublishPolicy,
-  type Application,
-  type ApplicationPublishPolicy,
-} from '@/lib/applications'
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  type HeaderBreadcrumbItem,
+  useHeaderBreadcrumbs,
+} from '@/components/layout/header-breadcrumbs'
+import { ApiError } from '@/lib/api'
+import { getApplication, type Application } from '@/lib/applications'
 import {
   getLatestConfigContent,
   type ConfigContent,
 } from '@/lib/config-content'
-import {
-  createConfigResource,
-  listConfigResources,
-  type ConfigFormat,
-  type ConfigResource,
-  type ConfigType,
-} from '@/lib/config-resources'
-import { getLatestConfigRelease, type ConfigRelease } from '@/lib/config-releases'
 import {
   deleteConfigEntry,
   listConfigEntries,
@@ -75,55 +61,139 @@ import {
   type ConfigEntryPayload,
 } from '@/lib/config-entries'
 import { listEnvironments, type Environment } from '@/lib/environments'
+import {
+  createConfigResource,
+  listConfigResources,
+  type ConfigFormat,
+  type ConfigResource,
+  type ConfigType,
+} from '@/lib/config-resources'
+import {
+  getLatestConfigRelease,
+  listConfigReleaseHistory,
+  publishConfigRelease,
+  rollbackConfigRelease,
+  type ConfigRelease,
+  type ConfigReleaseHistoryResponse,
+} from '@/lib/config-releases'
+import { cn } from '@/lib/utils'
 
 type LoadState = 'loading' | 'ready' | 'error'
 type ResourceFilter = 'ALL' | 'CONTENT' | 'ENTRIES'
+type FeedbackTone = 'success' | 'error' | 'info'
 
-const configTypeOptions: Array<{ label: string; value: ConfigType }> = [
-  { label: 'Text Content', value: 'CONTENT' },
-  { label: 'Structured Entries', value: 'ENTRIES' },
-]
+type ResourceRuntime = {
+  content: ConfigContent | null
+  entries: ConfigEntry[]
+  latestRelease: ConfigRelease | null
+}
 
-const configFormatOptions: Array<{ label: string; value: ConfigFormat }> = [
-  { label: 'YAML', value: 'YAML' },
-  { label: 'Properties', value: 'PROPERTIES' },
-  { label: 'JSON', value: 'JSON' },
-  { label: 'TOML', value: 'TOML' },
-  { label: 'XML', value: 'XML' },
-  { label: 'None', value: 'NONE' },
-]
+type ResourceFeedback = {
+  tone: FeedbackTone
+  message: string
+}
 
-const resourceFilterOptions: Array<{ label: string; value: ResourceFilter }> = [
-  { label: 'All Resources', value: 'ALL' },
-  { label: 'Text Resources', value: 'CONTENT' },
-  { label: 'KV Resources', value: 'ENTRIES' },
-]
+type EntryDialogState = {
+  resourceId: number
+  entry: ConfigEntry | null
+} | null
+
+type ReleaseDialogState = {
+  resource: ConfigResource
+  mode: 'history' | 'rollback'
+} | null
+
+type CreateResourceDraft = {
+  configName: string
+  type: ConfigType
+  format: ConfigFormat
+  version: string
+  description: string
+}
+
+type EntryDraft = {
+  key: string
+  value: string
+  valueType: string
+  description: string
+}
+
+type ReleaseSnapshotEntry = {
+  key: string
+  value: string
+  valueType: string | null
+  description: string | null
+}
+
+const defaultCreateResourceDraft: CreateResourceDraft = {
+  configName: '',
+  type: 'CONTENT',
+  format: 'YAML',
+  version: '',
+  description: '',
+}
+
+const defaultEntryDraft: EntryDraft = {
+  key: '',
+  value: '',
+  valueType: 'STRING',
+  description: '',
+}
+
+const contentFormats: ConfigFormat[] = ['YAML', 'PROPERTIES', 'JSON', 'TOML', 'XML']
+const entryValueTypes = ['STRING', 'BOOLEAN', 'NUMBER', 'JSON']
 
 export function ApplicationDetailPage() {
-  const { applicationId } = useParams({ from: '/_protected/applications/$applicationId' })
-  const { user } = useAuth()
+  const { applicationId } = useParams({
+    from: '/_protected/applications/$applicationId',
+  })
   const numericApplicationId = Number(applicationId)
+
   const [application, setApplication] = useState<Application | null>(null)
   const [resources, setResources] = useState<ConfigResource[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
-  const [policies, setPolicies] = useState<Record<number, ApplicationPublishPolicy>>({})
-  const [loadState, setLoadState] = useState<LoadState>('loading')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [requestVersion, setRequestVersion] = useState(0)
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [createErrorMessage, setCreateErrorMessage] = useState('')
-  const [isCreateSubmitting, setIsCreateSubmitting] = useState(false)
-  const [createType, setCreateType] = useState<ConfigType>('CONTENT')
-  const [createFormat, setCreateFormat] = useState<ConfigFormat>('YAML')
-  const [updatingPolicyId, setUpdatingPolicyId] = useState<number | null>(null)
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState('')
   const [resourceFilter, setResourceFilter] = useState<ResourceFilter>('ALL')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchValue, setSearchValue] = useState('')
+  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [baseVersion, setBaseVersion] = useState(0)
+  const [resourceDataVersion, setResourceDataVersion] = useState(0)
+  const [resourceRuntime, setResourceRuntime] = useState<Record<number, ResourceRuntime>>({})
+  const [resourceLoading, setResourceLoading] = useState(false)
+  const [collapsedResourceIds, setCollapsedResourceIds] = useState<Record<number, boolean>>({})
+  const [resourceFeedback, setResourceFeedback] = useState<Record<number, ResourceFeedback>>({})
+  const [busyAction, setBusyAction] = useState<{ resourceId: number; action: string } | null>(null)
+  const [createResourceOpen, setCreateResourceOpen] = useState(false)
+  const [createResourceDraft, setCreateResourceDraft] = useState<CreateResourceDraft>(
+    defaultCreateResourceDraft,
+  )
+  const [createResourceError, setCreateResourceError] = useState('')
+  const [isCreatingResource, setIsCreatingResource] = useState(false)
+  const [entryDialogState, setEntryDialogState] = useState<EntryDialogState>(null)
+  const [entryDraft, setEntryDraft] = useState<EntryDraft>(defaultEntryDraft)
+  const [entryDialogError, setEntryDialogError] = useState('')
+  const [isSavingEntry, setIsSavingEntry] = useState(false)
+  const [releaseDialogState, setReleaseDialogState] = useState<ReleaseDialogState>(null)
+  const [releaseHistory, setReleaseHistory] = useState<ConfigReleaseHistoryResponse[]>([])
+  const [releaseHistoryLoading, setReleaseHistoryLoading] = useState(false)
+  const [releaseHistoryError, setReleaseHistoryError] = useState('')
+  const [releaseComment, setReleaseComment] = useState('')
+  const [isRollingBack, setIsRollingBack] = useState<number | null>(null)
+
+  const breadcrumbItems = useMemo<HeaderBreadcrumbItem[]>(
+    () => [
+      { label: 'Applications', href: '/applications' },
+      ...(application ? [{ label: application.name }] : []),
+    ],
+    [application],
+  )
+  useHeaderBreadcrumbs(breadcrumbItems)
 
   useEffect(() => {
     const abortController = new AbortController()
 
-    async function load() {
+    async function loadBase() {
       setLoadState('loading')
       setErrorMessage('')
 
@@ -138,28 +208,23 @@ export function ApplicationDetailPage() {
           return
         }
 
-        const policyEntries = await Promise.all(
-          nextEnvironments.map(async (environment) => {
-            const policy = await getApplicationPublishPolicy(
-              numericApplicationId,
-              environment.id,
-            )
+        setApplication(nextApplication)
+        setResources(nextResources)
+        setEnvironments(nextEnvironments)
+        setCollapsedResourceIds((current) => {
+          const next = { ...current }
+          for (const resource of nextResources) {
+            if (!(resource.id in next)) {
+              next[resource.id] = false
+            }
+          }
+          return next
+        })
 
-            return [environment.id, policy] as const
-          }),
-        )
-
-        if (abortController.signal.aborted) {
-          return
+        if (nextEnvironments.length > 0) {
+          setSelectedEnvironmentId((current) => current || String(nextEnvironments[0].id))
         }
 
-        setApplication(nextApplication)
-        setResources(nextResources.toSorted((left, right) => left.name.localeCompare(right.name)))
-        setEnvironments(nextEnvironments)
-        setPolicies(Object.fromEntries(policyEntries))
-        setSelectedEnvironmentId((current) =>
-          current || (nextEnvironments[0] ? String(nextEnvironments[0].id) : ''),
-        )
         setLoadState('ready')
       } catch (error) {
         if (abortController.signal.aborted) {
@@ -167,115 +232,375 @@ export function ApplicationDetailPage() {
         }
 
         setErrorMessage(
-          error instanceof Error ? error.message : 'Failed to load application details.',
+          error instanceof Error ? error.message : 'Failed to load application configurations.',
         )
         setLoadState('error')
       }
     }
 
-    void load()
+    void loadBase()
 
     return () => abortController.abort()
-  }, [numericApplicationId, requestVersion])
+  }, [numericApplicationId, baseVersion])
 
-  const canManage = useMemo(() => {
-    if (!user || !application) {
-      return false
+  useEffect(() => {
+    const abortController = new AbortController()
+
+    async function loadResourceRuntime() {
+      if (!selectedEnvironmentId || resources.length === 0) {
+        setResourceRuntime({})
+        return
+      }
+
+      setResourceLoading(true)
+      setResourceFeedback({})
+
+      try {
+        const environmentId = Number(selectedEnvironmentId)
+        const entries = await Promise.all(
+          resources.map(async (resource) => {
+            const [content, resourceEntries, latestRelease] = await Promise.all([
+              resource.type === 'CONTENT'
+                ? getLatestConfigContent(resource.id, environmentId, abortController.signal).catch(
+                    (error) => {
+                      if (isNotFoundError(error)) {
+                        return null
+                      }
+                      throw error
+                    },
+                  )
+                : Promise.resolve(null),
+              resource.type === 'ENTRIES'
+                ? listConfigEntries(resource.id, environmentId, abortController.signal).catch(
+                    (error) => {
+                      if (isNotFoundError(error)) {
+                        return []
+                      }
+                      throw error
+                    },
+                  )
+                : Promise.resolve([]),
+              getLatestConfigRelease(resource.id, environmentId, abortController.signal).catch(
+                (error) => {
+                  if (isNotFoundError(error)) {
+                    return null
+                  }
+                  throw error
+                },
+              ),
+            ])
+
+            return [
+              resource.id,
+              {
+                content,
+                entries: resourceEntries,
+                latestRelease,
+              } satisfies ResourceRuntime,
+            ] as const
+          }),
+        )
+
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        setResourceRuntime(Object.fromEntries(entries))
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Failed to load configuration resources.',
+        )
+      } finally {
+        if (!abortController.signal.aborted) {
+          setResourceLoading(false)
+        }
+      }
     }
 
-    return (
-      user.roles.includes('SUPER_ADMIN') ||
-      user.id === application.owner.id ||
-      user.id === application.maintainer.id
-    )
-  }, [application, user])
+    void loadResourceRuntime()
+
+    return () => abortController.abort()
+  }, [resources, selectedEnvironmentId, resourceDataVersion])
+
+  useEffect(() => {
+    if (!releaseDialogState || !selectedEnvironmentId) {
+      return
+    }
+
+    const abortController = new AbortController()
+    const resourceId = releaseDialogState.resource.id
+
+    async function loadHistory() {
+      setReleaseHistoryLoading(true)
+      setReleaseHistoryError('')
+
+      try {
+        const nextHistory = await listConfigReleaseHistory(
+          resourceId,
+          Number(selectedEnvironmentId),
+          abortController.signal,
+        )
+
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        setReleaseHistory(nextHistory)
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        setReleaseHistoryError(
+          error instanceof Error ? error.message : 'Failed to load release history.',
+        )
+      } finally {
+        if (!abortController.signal.aborted) {
+          setReleaseHistoryLoading(false)
+        }
+      }
+    }
+
+    void loadHistory()
+
+    return () => abortController.abort()
+  }, [releaseDialogState, selectedEnvironmentId])
+
+  useEffect(() => {
+    if (!entryDialogState) {
+      setEntryDraft(defaultEntryDraft)
+      setEntryDialogError('')
+      return
+    }
+
+    if (entryDialogState.entry) {
+      setEntryDraft({
+        key: entryDialogState.entry.key,
+        value: entryDialogState.entry.value,
+        valueType: entryDialogState.entry.valueType ?? 'STRING',
+        description: entryDialogState.entry.description ?? '',
+      })
+      return
+    }
+
+    setEntryDraft(defaultEntryDraft)
+  }, [entryDialogState])
 
   const selectedEnvironment = useMemo(
-    () => environments.find((environment) => environment.id === Number(selectedEnvironmentId)) ?? null,
+    () =>
+      selectedEnvironmentId
+        ? environments.find((environment) => environment.id === Number(selectedEnvironmentId)) ?? null
+        : null,
     [environments, selectedEnvironmentId],
   )
 
   const filteredResources = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase()
+    const normalizedSearch = searchValue.trim().toLowerCase()
 
     return resources.filter((resource) => {
-      const matchesFilter =
-        resourceFilter === 'ALL' ||
-        (resourceFilter === 'CONTENT' && resource.type === 'CONTENT') ||
-        (resourceFilter === 'ENTRIES' && resource.type === 'ENTRIES')
-
-      if (!matchesFilter) {
+      if (resourceFilter === 'CONTENT' && resource.type !== 'CONTENT') {
         return false
       }
 
-      if (!normalizedQuery) {
+      if (resourceFilter === 'ENTRIES' && resource.type !== 'ENTRIES') {
+        return false
+      }
+
+      if (!normalizedSearch) {
         return true
       }
 
-      return [resource.name, resource.description ?? '', getResourceFormatLabel(resource)]
-        .join(' ')
-        .toLowerCase()
-        .includes(normalizedQuery)
+      return (
+        resource.name.toLowerCase().includes(normalizedSearch) ||
+        (resource.description ?? '').toLowerCase().includes(normalizedSearch)
+      )
     })
-  }, [resourceFilter, resources, searchQuery])
+  }, [resourceFilter, resources, searchValue])
 
   const retryLoad = () => {
-    setRequestVersion((currentVersion) => currentVersion + 1)
+    setBaseVersion((current) => current + 1)
+    setResourceDataVersion((current) => current + 1)
   }
 
-  const handleCreateResource = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setCreateErrorMessage('')
-    setIsCreateSubmitting(true)
+  const handleCreateResource = async () => {
+    if (!application) {
+      return
+    }
 
-    const formData = new FormData(event.currentTarget)
+    setIsCreatingResource(true)
+    setCreateResourceError('')
 
     try {
-      const resource = await createConfigResource(numericApplicationId, {
-        configName: String(formData.get('configName') ?? ''),
-        type: createType,
-        format: createFormat,
-        version: null,
-        description: String(formData.get('description') ?? ''),
+      await createConfigResource(application.id, {
+        configName: createResourceDraft.configName,
+        type: createResourceDraft.type,
+        format: createResourceDraft.type === 'ENTRIES' ? 'NONE' : createResourceDraft.format,
+        version: createResourceDraft.version ? Number(createResourceDraft.version) : null,
+        description: createResourceDraft.description,
       })
 
-      setResources((current) =>
-        current.concat(resource).toSorted((left, right) => left.name.localeCompare(right.name)),
-      )
-      setIsCreateOpen(false)
-      setCreateType('CONTENT')
-      setCreateFormat('YAML')
-      event.currentTarget.reset()
+      setCreateResourceOpen(false)
+      setCreateResourceDraft(defaultCreateResourceDraft)
+      setBaseVersion((current) => current + 1)
+      setResourceDataVersion((current) => current + 1)
     } catch (error) {
-      setCreateErrorMessage(
-        error instanceof Error ? error.message : 'Failed to create config resource.',
+      setCreateResourceError(
+        error instanceof Error ? error.message : 'Failed to create configuration resource.',
       )
     } finally {
-      setIsCreateSubmitting(false)
+      setIsCreatingResource(false)
     }
   }
 
-  const handlePolicyChange = async (environmentId: number, checked: boolean) => {
-    setUpdatingPolicyId(environmentId)
+  const handlePublish = async (resource: ConfigResource) => {
+    if (!selectedEnvironmentId) {
+      return
+    }
+
+    setBusyAction({ resourceId: resource.id, action: 'publish' })
+    setResourceFeedback((current) => ({ ...current, [resource.id]: undefined as never }))
 
     try {
-      const nextPolicy = await saveApplicationPublishPolicy(
-        numericApplicationId,
-        environmentId,
-        checked,
-      )
+      const response = await publishConfigRelease(resource.id, Number(selectedEnvironmentId), '')
 
-      setPolicies((current) => ({
+      setResourceFeedback((current) => ({
         ...current,
-        [environmentId]: nextPolicy,
+        [resource.id]:
+          response.outcome === 'PUBLISHED'
+            ? { tone: 'success', message: 'Published successfully.' }
+            : { tone: 'info', message: 'Submitted for review.' },
       }))
+      setResourceDataVersion((current) => current + 1)
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to update publish policy.',
+      setResourceFeedback((current) => ({
+        ...current,
+        [resource.id]: {
+          tone: 'error',
+          message: error instanceof Error ? error.message : 'Failed to publish configuration.',
+        },
+      }))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const handleRollback = async (resource: ConfigResource, releaseId: number) => {
+    if (!selectedEnvironmentId) {
+      return
+    }
+
+    setIsRollingBack(releaseId)
+
+    try {
+      await rollbackConfigRelease(resource.id, Number(selectedEnvironmentId), releaseId, '')
+      setReleaseDialogState(null)
+      setReleaseComment('')
+      setResourceFeedback((current) => ({
+        ...current,
+        [resource.id]: {
+          tone: 'success',
+          message: `Rolled back to release #${releaseId}.`,
+        },
+      }))
+      setResourceDataVersion((current) => current + 1)
+    } catch (error) {
+      setReleaseHistoryError(
+        error instanceof Error ? error.message : 'Failed to rollback release.',
       )
     } finally {
-      setUpdatingPolicyId(null)
+      setIsRollingBack(null)
     }
+  }
+
+  const handleDeleteEntry = async (resourceId: number, entry: ConfigEntry) => {
+    if (!selectedEnvironmentId) {
+      return
+    }
+
+    const confirmed = window.confirm(`Delete "${entry.key}" from this environment?`)
+    if (!confirmed) {
+      return
+    }
+
+    setBusyAction({ resourceId, action: `delete-entry-${entry.id}` })
+
+    try {
+      await deleteConfigEntry(resourceId, Number(selectedEnvironmentId), entry.id)
+      setResourceFeedback((current) => ({
+        ...current,
+        [resourceId]: {
+          tone: 'success',
+          message: `Deleted entry "${entry.key}".`,
+        },
+      }))
+      setResourceDataVersion((current) => current + 1)
+    } catch (error) {
+      setResourceFeedback((current) => ({
+        ...current,
+        [resourceId]: {
+          tone: 'error',
+          message: error instanceof Error ? error.message : 'Failed to delete entry.',
+        },
+      }))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const handleSaveEntry = async () => {
+    if (!selectedEnvironmentId || !entryDialogState) {
+      return
+    }
+
+    setIsSavingEntry(true)
+    setEntryDialogError('')
+
+    try {
+      const payload: ConfigEntryPayload = {
+        key: entryDraft.key,
+        value: entryDraft.value,
+        valueType: entryDraft.valueType,
+        description: entryDraft.description,
+      }
+
+      await saveConfigEntry(entryDialogState.resourceId, Number(selectedEnvironmentId), payload)
+
+      if (
+        entryDialogState.entry &&
+        entryDialogState.entry.key !== entryDraft.key
+      ) {
+        await deleteConfigEntry(
+          entryDialogState.resourceId,
+          Number(selectedEnvironmentId),
+          entryDialogState.entry.id,
+        )
+      }
+
+      setResourceFeedback((current) => ({
+        ...current,
+        [entryDialogState.resourceId]: {
+          tone: 'success',
+          message: entryDialogState.entry ? 'Entry updated.' : 'Entry created.',
+        },
+      }))
+      setEntryDialogState(null)
+      setResourceDataVersion((current) => current + 1)
+    } catch (error) {
+      setEntryDialogError(error instanceof Error ? error.message : 'Failed to save entry.')
+    } finally {
+      setIsSavingEntry(false)
+    }
+  }
+
+  const toggleCollapse = (resourceId: number) => {
+    setCollapsedResourceIds((current) => ({
+      ...current,
+      [resourceId]: !current[resourceId],
+    }))
   }
 
   if (loadState === 'loading') {
@@ -284,941 +609,768 @@ export function ApplicationDetailPage() {
 
   if (loadState === 'error' || !application) {
     return (
-      <section className='flex min-h-0 flex-1 flex-col gap-6'>
-        <Empty className='min-h-full border'>
-          <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              <TriangleAlert />
-            </EmptyMedia>
-            <EmptyTitle>Unable to load application</EmptyTitle>
-            <EmptyDescription>{errorMessage}</EmptyDescription>
-          </EmptyHeader>
-          <Button type='button' variant='outline' onClick={retryLoad}>
-            <RefreshCcw className='size-4' />
+      <section className='flex min-h-0 flex-1 flex-col gap-4'>
+        <div className='rounded-2xl border border-dashed border-destructive/40 bg-destructive/5 p-6'>
+          <h1 className='text-xl font-semibold'>Unable to load configurations</h1>
+          <p className='mt-2 text-sm text-muted-foreground'>
+            {errorMessage || 'The application detail page could not be loaded.'}
+          </p>
+          <Button type='button' variant='outline' className='mt-4' onClick={retryLoad}>
             Retry
           </Button>
-        </Empty>
+        </div>
       </section>
     )
   }
 
   return (
-    <section className='flex min-h-0 flex-1 flex-col gap-6'>
-      <div className='space-y-4'>
-        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-          <Link to='/applications' className='hover:text-foreground'>
-            Applications
-          </Link>
-          <ChevronRight className='size-4' />
-          <span className='text-foreground'>{application.name}</span>
-        </div>
-
-        <div className='space-y-2'>
-          <h1 className='text-3xl font-bold tracking-tight'>Configurations</h1>
-          <p className='max-w-3xl text-sm text-muted-foreground'>
-            Manage configuration resources for <span className='font-medium text-foreground'>{application.name}</span>{' '}
-            across environments. Text resources open in the dedicated editor, and KV resources can be edited inline.
+    <>
+      <section className='flex min-h-0 flex-1 flex-col gap-5'>
+        <div className='space-y-1'>
+          <h1 className='text-[2rem] font-semibold tracking-tight'>Configurations</h1>
+          <p className='text-sm text-muted-foreground'>
+            Manage configuration resources for this application across different environments.
           </p>
         </div>
-      </div>
 
-      <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
-        <div className='flex flex-1 flex-col gap-3 md:flex-row'>
-          <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
-            <SelectTrigger className='w-full md:w-56'>
-              <SelectValue placeholder='Environment' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
+        <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
+          <div className='flex flex-1 flex-col gap-3 lg:flex-row lg:items-center'>
+            <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
+              <SelectTrigger className='h-9 w-full min-w-48 rounded-xl lg:w-[220px]'>
+                <SelectValue placeholder='Environment' />
+              </SelectTrigger>
+              <SelectContent>
                 {environments.map((environment) => (
                   <SelectItem key={environment.id} value={String(environment.id)}>
-                    {environment.code} · {environment.name}
+                    {environment.code}
                   </SelectItem>
                 ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
 
-          <Select value={resourceFilter} onValueChange={(value) => setResourceFilter(value as ResourceFilter)}>
-            <SelectTrigger className='w-full md:w-52'>
-              <SelectValue placeholder='Resources' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {resourceFilterOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            <Select value={resourceFilter} onValueChange={(value) => setResourceFilter(value as ResourceFilter)}>
+              <SelectTrigger className='h-9 w-full min-w-44 rounded-xl lg:w-[180px]'>
+                <SelectValue placeholder='All Resources' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='ALL'>All Resources</SelectItem>
+                <SelectItem value='CONTENT'>Text Resources</SelectItem>
+                <SelectItem value='ENTRIES'>KV Resources</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <div className='relative min-w-0 flex-1'>
-            <Search className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
-            <Input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              className='pl-9'
-              placeholder='Search resources...'
-            />
-          </div>
-        </div>
-
-        {canManage ? (
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button type='button'>
-                <Plus className='size-4' />
-                Create Resource
-              </Button>
-            </DialogTrigger>
-            <DialogContent className='sm:max-w-lg'>
-              <DialogHeader>
-                <DialogTitle>Create config resource</DialogTitle>
-                <DialogDescription>
-                  Add a new resource inside this application. Text resources open in a Monaco editor, while KV resources stay on this page.
-                </DialogDescription>
-              </DialogHeader>
-
-              <form className='flex flex-col gap-4' onSubmit={handleCreateResource}>
-                <div className='flex flex-col gap-2'>
-                  <Label htmlFor='resource-name'>Config Name</Label>
-                  <Input
-                    id='resource-name'
-                    name='configName'
-                    placeholder='application.yaml'
-                    required
-                  />
-                </div>
-
-                <div className='grid gap-4 md:grid-cols-2'>
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor='resource-type'>Type</Label>
-                    <Select
-                      value={createType}
-                      onValueChange={(value) => {
-                        const nextType = value as ConfigType
-                        setCreateType(nextType)
-                        if (nextType === 'ENTRIES') {
-                          setCreateFormat('NONE')
-                        } else if (createFormat === 'NONE') {
-                          setCreateFormat('YAML')
-                        }
-                      }}
-                    >
-                      <SelectTrigger id='resource-type' className='w-full'>
-                        <SelectValue placeholder='Type' />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {configTypeOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor='resource-format'>Format</Label>
-                    <Select
-                      value={createFormat}
-                      onValueChange={(value) => setCreateFormat(value as ConfigFormat)}
-                    >
-                      <SelectTrigger id='resource-format' className='w-full'>
-                        <SelectValue placeholder='Format' />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {configFormatOptions
-                            .filter((option) =>
-                              createType === 'ENTRIES'
-                                ? option.value === 'NONE'
-                                : option.value !== 'NONE',
-                            )
-                            .map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className='flex flex-col gap-2'>
-                  <Label htmlFor='resource-description'>Description</Label>
-                  <Input
-                    id='resource-description'
-                    name='description'
-                    placeholder='Shared runtime configuration'
-                  />
-                </div>
-
-                {createErrorMessage ? (
-                  <p className='text-sm text-destructive'>{createErrorMessage}</p>
-                ) : null}
-
-                <DialogFooter>
-                  <Button type='submit' disabled={isCreateSubmitting}>
-                    {isCreateSubmitting ? <LoaderCircle className='size-4 animate-spin' /> : null}
-                    Create Resource
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        ) : null}
-      </div>
-
-      {filteredResources.length === 0 ? (
-        <Empty className='min-h-[360px] rounded-2xl border'>
-          <EmptyHeader>
-            <EmptyMedia variant='icon'>
-              <FileCode2 />
-            </EmptyMedia>
-            <EmptyTitle>No matching resources</EmptyTitle>
-            <EmptyDescription>
-              Adjust the current filters or create a new resource for this application.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className='space-y-4'>
-          {filteredResources.map((resource) => (
-            <Card key={resource.id} className='overflow-hidden rounded-2xl'>
-              <CardContent className='space-y-5 p-6'>
-                <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
-                  <div className='flex min-w-0 items-start gap-4'>
-                    <div className='flex size-12 shrink-0 items-center justify-center rounded-2xl border bg-muted/60'>
-                      {resource.type === 'CONTENT' ? (
-                        <FileCode2 className='size-5' />
-                      ) : (
-                        <Database className='size-5' />
-                      )}
-                    </div>
-                    <div className='min-w-0 space-y-2'>
-                      <div className='flex flex-wrap items-center gap-3'>
-                        <h2 className='truncate text-xl font-semibold'>{resource.name}</h2>
-                        <Badge variant='secondary' className='rounded-full px-3 py-1 text-xs uppercase'>
-                          {getResourceFormatLabel(resource)}
-                        </Badge>
-                      </div>
-                      <p className='max-w-3xl text-sm text-muted-foreground'>
-                        {resource.description?.trim() || 'No description provided yet.'}
-                      </p>
-                      <div className='flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground'>
-                        <span>#{resource.id}</span>
-                        <span>Updated {formatDateTime(resource.updatedAt)}</span>
-                        {selectedEnvironment ? <span>Environment: {selectedEnvironment.code}</span> : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  {resource.type === 'CONTENT' ? (
-                    <Button type='button' variant='outline' asChild className='shrink-0'>
-                      <Link
-                        to='/applications/$applicationId/resources/$resourceId/content'
-                        params={{
-                          applicationId: String(application.id),
-                          resourceId: String(resource.id),
-                        }}
-                      >
-                        <PencilLine className='size-4' />
-                        Edit
-                      </Link>
-                    </Button>
-                  ) : null}
-                </div>
-
-                {resource.type === 'CONTENT' ? (
-                  <ContentResourcePreview resource={resource} environment={selectedEnvironment} />
-                ) : (
-                  <EntriesResourceEditor
-                    resource={resource}
-                    environment={selectedEnvironment}
-                    canManage={canManage}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <div className='grid gap-6 xl:grid-cols-[1.1fr_0.9fr]'>
-        <Card>
-          <CardHeader>
-            <CardTitle>Publish Policies</CardTitle>
-            <CardDescription>
-              Control whether developers need approval before publishing in each environment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className='grid gap-4'>
-            {environments.length === 0 ? (
-              <div className='rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground'>
-                Create environments first to configure environment-level publish rules.
-              </div>
-            ) : (
-              environments.map((environment) => {
-                const policy = policies[environment.id]
-                const checked = policy?.publishRequiresApproval ?? true
-
-                return (
-                  <div
-                    key={environment.id}
-                    className='flex flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center md:justify-between'
-                  >
-                    <div className='space-y-1'>
-                      <div className='flex items-center gap-2'>
-                        <p className='font-medium'>{environment.name}</p>
-                        <Badge variant='outline'>{environment.code}</Badge>
-                      </div>
-                      <p className='text-sm text-muted-foreground'>
-                        {environment.description?.trim() ||
-                          'No environment description configured.'}
-                      </p>
-                    </div>
-
-                    <div className='flex items-center gap-3'>
-                      <Label
-                        htmlFor={`policy-${environment.id}`}
-                        className='text-sm text-muted-foreground'
-                      >
-                        Developer publish requires approval
-                      </Label>
-                      <Switch
-                        id={`policy-${environment.id}`}
-                        checked={checked}
-                        disabled={!canManage || updatingPolicyId === environment.id}
-                        onCheckedChange={(value) =>
-                          void handlePolicyChange(environment.id, value)
-                        }
-                      />
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Application Access</CardTitle>
-            <CardDescription>
-              Application membership controls who can edit, review, and publish configs.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className='space-y-4'>
-            <MemberRow
-              icon={<ShieldCheck className='size-4' />}
-              label='Owner'
-              username={application.owner.username}
-              email={application.owner.email}
-            />
-            <MemberRow
-              icon={<Settings2 className='size-4' />}
-              label='Maintainer'
-              username={application.maintainer.username}
-              email={application.maintainer.email}
-            />
-            <div className='space-y-3 rounded-xl border p-4'>
-              <div className='flex items-center gap-2 text-sm font-medium'>
-                <UsersRound className='size-4' />
-                Developers
-              </div>
-              {application.developers.length === 0 ? (
-                <p className='text-sm text-muted-foreground'>No developers assigned yet.</p>
-              ) : (
-                <div className='grid gap-3'>
-                  {application.developers.map((developer) => (
-                    <div
-                      key={developer.id}
-                      className='rounded-lg bg-muted/40 px-3 py-2 text-sm'
-                    >
-                      <p className='font-medium'>{developer.username}</p>
-                      <p className='text-muted-foreground'>{developer.email}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className='relative w-full lg:max-w-[320px]'>
+              <Search className='pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground' />
+              <Input
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                className='h-9 rounded-xl pl-9 pr-12'
+                placeholder='Search resources...'
+              />
+              <span className='pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground'>
+                ⌘ K
+              </span>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
+          </div>
+
+          <Button
+            type='button'
+            variant='outline'
+            className='h-9 rounded-xl px-4'
+            onClick={() => setCreateResourceOpen(true)}
+          >
+            Create Resource
+            <Plus className='size-4' />
+          </Button>
+        </div>
+
+        <div className='space-y-3'>
+          {resourceLoading ? (
+            <div className='space-y-3'>
+              <ResourceCardSkeleton />
+              <ResourceCardSkeleton />
+            </div>
+          ) : filteredResources.length === 0 ? (
+            <div className='rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground'>
+              No configuration resources match the current filters.
+            </div>
+          ) : (
+            filteredResources.map((resource) => {
+              const runtime = resourceRuntime[resource.id] ?? {
+                content: null,
+                entries: [],
+                latestRelease: null,
+              }
+              const isCollapsed = collapsedResourceIds[resource.id] ?? false
+              const feedback = resourceFeedback[resource.id]
+              const latestReleaseEntries = parseReleaseSnapshotEntries(runtime.latestRelease?.snapshot)
+              const latestReleaseEntriesByKey = new Map(
+                latestReleaseEntries.map((entry) => [entry.key, entry]),
+              )
+              const cardStatus = getResourceCardStatus(resource, runtime, latestReleaseEntries)
+
+              return (
+                <Collapsible
+                  key={resource.id}
+                  open={!isCollapsed}
+                  onOpenChange={() => toggleCollapse(resource.id)}
+                >
+                  <Card className='overflow-hidden rounded-2xl border border-border/60 bg-card shadow-none ring-0'>
+                    <CardContent className='p-0'>
+                      <div className='flex flex-col gap-3 p-3'>
+                        <div className='flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between'>
+                          <div className='flex min-w-0 items-start gap-3'>
+                            <div
+                              className={cn(
+                                'flex size-10 shrink-0 items-center justify-center rounded-xl border',
+                                resource.type === 'ENTRIES'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+                                  : 'border-border/60 bg-muted/40 text-foreground',
+                              )}
+                            >
+                              {resource.type === 'ENTRIES' ? (
+                                <Database className='size-4.5' />
+                              ) : (
+                                <File className='size-4.5' />
+                              )}
+                            </div>
+
+                            <div className='min-w-0 space-y-1.5'>
+                              <div className='flex flex-wrap items-center gap-2'>
+                                <h2 className='truncate text-lg font-semibold'>{resource.name}</h2>
+                                <ResourceFormatBadge resource={resource} />
+                              </div>
+                              <p className='text-[13px] text-muted-foreground'>
+                                {resource.description?.trim() || getFallbackDescription(resource)}
+                              </p>
+                              <div className='flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground'>
+                                <StatusDotLabel label={cardStatus} />
+                                <span>{application.owner.username}</span>
+                                <span>
+                                  {formatDateTime(getResourceUpdatedAt(resource, runtime))}
+                                </span>
+                                {selectedEnvironment ? <span>{selectedEnvironment.code}</span> : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className='flex flex-col items-start gap-2 xl:items-end'>
+                            <div className='flex flex-wrap items-center gap-2'>
+                              {runtime.latestRelease ? (
+                                <Badge variant='outline' className='rounded-full px-2 py-0 text-[10px]'>
+                                  Release #{runtime.latestRelease.version}
+                                </Badge>
+                              ) : null}
+                            </div>
+
+                            <div className='flex flex-wrap items-center gap-1.5'>
+                              {resource.type === 'CONTENT' ? (
+                                <Button
+                                  type='button'
+                                  variant='outline'
+                                  size='xs'
+                                  asChild
+                                  className='rounded-lg'
+                                >
+                                  <Link
+                                    to='/applications/$applicationId/resources/$resourceId/content'
+                                    params={{
+                                      applicationId: String(application.id),
+                                      resourceId: String(resource.id),
+                                    }}
+                                  >
+                                    <PencilLine className='size-3.5' />
+                                    Edit
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <Button
+                                  type='button'
+                                  variant='outline'
+                                  size='xs'
+                                  className='rounded-lg'
+                                  onClick={() => setEntryDialogState({ resourceId: resource.id, entry: null })}
+                                >
+                                  <PencilLine className='size-3.5' />
+                                  Edit
+                                </Button>
+                              )}
+
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='xs'
+                                className='rounded-lg'
+                                onClick={() => void handlePublish(resource)}
+                                disabled={!selectedEnvironmentId || busyAction?.resourceId === resource.id}
+                              >
+                                {busyAction?.resourceId === resource.id && busyAction.action === 'publish' ? (
+                                  <LoaderCircle className='size-3.5 animate-spin' />
+                                ) : (
+                                  <UploadCloud className='size-3.5' />
+                                )}
+                                Publish
+                              </Button>
+
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='xs'
+                                className='rounded-lg'
+                                onClick={() => {
+                                  setReleaseComment('')
+                                  setReleaseDialogState({ resource, mode: 'rollback' })
+                                }}
+                                disabled={!selectedEnvironmentId}
+                              >
+                                <RotateCcw className='size-3.5' />
+                                Rollback
+                              </Button>
+
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='xs'
+                                className='rounded-lg'
+                                onClick={() => {
+                                  setReleaseComment('')
+                                  setReleaseDialogState({ resource, mode: 'history' })
+                                }}
+                                disabled={!selectedEnvironmentId}
+                              >
+                                <History className='size-3.5' />
+                                History
+                              </Button>
+
+                              <CollapsibleTrigger asChild>
+                                <Button type='button' variant='outline' size='icon-xs' className='rounded-lg'>
+                                  {isCollapsed ? (
+                                    <ChevronDown className='size-4' />
+                                  ) : (
+                                    <ChevronUp className='size-4' />
+                                  )}
+                                </Button>
+                              </CollapsibleTrigger>
+                            </div>
+                          </div>
+                        </div>
+
+                        {feedback ? (
+                          <div
+                            className={cn(
+                              'rounded-xl border px-3 py-2 text-sm',
+                              feedback.tone === 'success'
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+                                : feedback.tone === 'error'
+                                  ? 'border-destructive/30 bg-destructive/5 text-destructive'
+                                  : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300',
+                            )}
+                          >
+                            {feedback.message}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <CollapsibleContent>
+                          <div className='border-t px-3 pb-3 pt-2.5'>
+                          {resource.type === 'CONTENT' ? (
+                            <ContentResourcePreview
+                              applicationId={application.id}
+                              resource={resource}
+                              runtime={runtime}
+                            />
+                          ) : (
+                            <EntriesResourceTable
+                              resource={resource}
+                              entries={runtime.entries}
+                              latestReleaseEntriesByKey={latestReleaseEntriesByKey}
+                              onAddEntry={() =>
+                                setEntryDialogState({ resourceId: resource.id, entry: null })
+                              }
+                              onEditEntry={(entry) =>
+                                setEntryDialogState({ resourceId: resource.id, entry })
+                              }
+                              onDeleteEntry={(entry) => void handleDeleteEntry(resource.id, entry)}
+                            />
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </CardContent>
+                  </Card>
+                </Collapsible>
+              )
+            })
+          )}
+        </div>
+      </section>
+
+      <Dialog open={createResourceOpen} onOpenChange={setCreateResourceOpen}>
+        <DialogContent className='max-w-lg rounded-2xl p-0'>
+          <DialogHeader className='px-5 pt-5'>
+            <DialogTitle>Create Resource</DialogTitle>
+            <DialogDescription>
+              Add a new text or KV configuration resource for this application.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='space-y-4 px-5 pb-5'>
+            <div className='space-y-2'>
+              <label className='text-sm font-medium'>Config Name</label>
+              <Input
+                value={createResourceDraft.configName}
+                onChange={(event) =>
+                  setCreateResourceDraft((current) => ({
+                    ...current,
+                    configName: event.target.value,
+                  }))
+                }
+                placeholder='application.yaml'
+              />
+            </div>
+
+            <div className='grid gap-4 md:grid-cols-2'>
+              <div className='space-y-2'>
+                <label className='text-sm font-medium'>Type</label>
+                <Select
+                  value={createResourceDraft.type}
+                  onValueChange={(value) =>
+                    setCreateResourceDraft((current) => ({
+                      ...current,
+                      type: value as ConfigType,
+                      format: value === 'ENTRIES' ? 'NONE' : current.format === 'NONE' ? 'YAML' : current.format,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='CONTENT'>Content</SelectItem>
+                    <SelectItem value='ENTRIES'>KV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {createResourceDraft.type === 'CONTENT' ? (
+                <div className='space-y-2'>
+                  <label className='text-sm font-medium'>Format</label>
+                  <Select
+                    value={createResourceDraft.format}
+                    onValueChange={(value) =>
+                      setCreateResourceDraft((current) => ({
+                        ...current,
+                        format: value as ConfigFormat,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contentFormats.map((format) => (
+                        <SelectItem key={format} value={format}>
+                          {normalizeFormatLabel(format)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+
+            <div className='space-y-2'>
+              <label className='text-sm font-medium'>Description</label>
+              <Textarea
+                value={createResourceDraft.description}
+                onChange={(event) =>
+                  setCreateResourceDraft((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+                rows={3}
+                placeholder='Describe what this resource controls.'
+              />
+            </div>
+
+            {createResourceError ? (
+              <p className='text-sm text-destructive'>{createResourceError}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button type='button' variant='outline' onClick={() => setCreateResourceOpen(false)}>
+              Cancel
+            </Button>
+            <Button type='button' disabled={isCreatingResource} onClick={() => void handleCreateResource()}>
+              {isCreatingResource ? <LoaderCircle className='size-4 animate-spin' /> : null}
+              Create Resource
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={entryDialogState !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEntryDialogState(null)
+          }
+        }}
+      >
+        <DialogContent className='max-w-2xl rounded-2xl p-0'>
+          <DialogHeader className='px-5 pt-5'>
+            <DialogTitle>{entryDialogState?.entry ? 'Edit KV Entry' : 'Add KV Entry'}</DialogTitle>
+            <DialogDescription>
+              Keep KV editing inside the application page while preserving compact release visibility.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='space-y-4 px-5 pb-5'>
+            <div className='grid gap-4 md:grid-cols-[1.4fr_0.8fr]'>
+              <div className='space-y-2'>
+                <label className='text-sm font-medium'>Key</label>
+                <Input
+                  value={entryDraft.key}
+                  onChange={(event) =>
+                    setEntryDraft((current) => ({ ...current, key: event.target.value }))
+                  }
+                  placeholder='feature.signup.enabled'
+                />
+              </div>
+              <div className='space-y-2'>
+                <label className='text-sm font-medium'>Type</label>
+                <Select
+                  value={entryDraft.valueType}
+                  onValueChange={(value) =>
+                    setEntryDraft((current) => ({ ...current, valueType: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entryValueTypes.map((valueType) => (
+                      <SelectItem key={valueType} value={valueType}>
+                        {valueType}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className='space-y-2'>
+              <label className='text-sm font-medium'>Value</label>
+              <Textarea
+                value={entryDraft.value}
+                onChange={(event) =>
+                  setEntryDraft((current) => ({ ...current, value: event.target.value }))
+                }
+                rows={4}
+                placeholder='true'
+              />
+            </div>
+
+            <div className='space-y-2'>
+              <label className='text-sm font-medium'>Comment</label>
+              <Input
+                value={entryDraft.description}
+                onChange={(event) =>
+                  setEntryDraft((current) => ({ ...current, description: event.target.value }))
+                }
+                placeholder='Explain what this entry controls.'
+              />
+            </div>
+
+            {entryDialogError ? (
+              <p className='text-sm text-destructive'>{entryDialogError}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button type='button' variant='outline' onClick={() => setEntryDialogState(null)}>
+              Cancel
+            </Button>
+            <Button type='button' disabled={isSavingEntry} onClick={() => void handleSaveEntry()}>
+              {isSavingEntry ? <LoaderCircle className='size-4 animate-spin' /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={releaseDialogState !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReleaseDialogState(null)
+            setReleaseComment('')
+            setReleaseHistoryError('')
+          }
+        }}
+      >
+        <DialogContent className='max-w-3xl rounded-2xl p-0'>
+          <DialogHeader className='px-5 pt-5'>
+            <DialogTitle>
+              {releaseDialogState?.mode === 'rollback' ? 'Rollback Release' : 'Release History'}
+            </DialogTitle>
+            <DialogDescription>
+              {releaseDialogState?.mode === 'rollback'
+                ? 'Choose a historical release to restore for the selected environment.'
+                : 'Review historical release transitions for this resource.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='space-y-4 px-5 pb-5'>
+            {releaseDialogState?.mode === 'rollback' ? (
+              <div className='space-y-2'>
+                <label className='text-sm font-medium'>Rollback Comment</label>
+                <Input
+                  value={releaseComment}
+                  onChange={(event) => setReleaseComment(event.target.value)}
+                  placeholder='Optional rollback comment'
+                />
+              </div>
+            ) : null}
+
+            {releaseHistoryError ? (
+              <p className='text-sm text-destructive'>{releaseHistoryError}</p>
+            ) : null}
+
+            <div className='rounded-2xl border'>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Release</TableHead>
+                    <TableHead>Previous</TableHead>
+                    <TableHead>Created At</TableHead>
+                    <TableHead className='w-[160px] text-right'>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {releaseHistoryLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className='py-8 text-center text-sm text-muted-foreground'>
+                        Loading release history…
+                      </TableCell>
+                    </TableRow>
+                  ) : releaseHistory.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className='py-8 text-center text-sm text-muted-foreground'>
+                        No historical releases found for this environment.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    releaseHistory.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className='font-medium'>#{item.releaseId}</TableCell>
+                        <TableCell>{item.previousReleaseId ? `#${item.previousReleaseId}` : '—'}</TableCell>
+                        <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                        <TableCell className='text-right'>
+                          {releaseDialogState?.mode === 'rollback' ? (
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='outline'
+                              className='rounded-xl'
+                              disabled={
+                                !releaseDialogState || isRollingBack === item.releaseId
+                              }
+                              onClick={() =>
+                                releaseDialogState
+                                  ? void handleRollback(releaseDialogState.resource, item.releaseId)
+                                  : undefined
+                              }
+                            >
+                              {isRollingBack === item.releaseId ? (
+                                <LoaderCircle className='size-3.5 animate-spin' />
+                              ) : (
+                                <RotateCcw className='size-3.5' />
+                              )}
+                              Rollback
+                            </Button>
+                          ) : (
+                            <span className='text-sm text-muted-foreground'>Recorded</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter showCloseButton />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
 type ContentResourcePreviewProps = {
+  applicationId: number
   resource: ConfigResource
-  environment: Environment | null
+  runtime: ResourceRuntime
 }
 
-function ContentResourcePreview({ resource, environment }: ContentResourcePreviewProps) {
-  const [contentState, setContentState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const [content, setContent] = useState<ConfigContent | null>(null)
-  const [errorMessage, setErrorMessage] = useState('')
-
-  useEffect(() => {
-    if (!environment) {
-      return
-    }
-
-    const abortController = new AbortController()
-    const environmentId = environment.id
-
-    async function loadPreview() {
-      setContentState('loading')
-      setErrorMessage('')
-
-      try {
-        const nextContent = await getLatestConfigContent(
-          resource.id,
-          environmentId,
-          abortController.signal,
-        )
-
-        if (abortController.signal.aborted) {
-          return
-        }
-
-        setContent(nextContent)
-        setContentState('ready')
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          return
-        }
-
-        setContent(null)
-        setContentState('error')
-        setErrorMessage(
-          error instanceof Error ? error.message : 'Failed to load preview content.',
-        )
-      }
-    }
-
-    void loadPreview()
-
-    return () => abortController.abort()
-  }, [environment, resource.id])
-
-  if (!environment) {
-    return (
-      <div className='rounded-2xl border bg-muted/20 px-4 py-10 text-sm text-muted-foreground'>
-        Create an environment first to edit and preview content resources.
-      </div>
-    )
-  }
-
-  if (contentState === 'loading') {
-    return (
-      <div className='rounded-2xl border bg-muted/20 p-4'>
-        <Skeleton className='h-32 rounded-xl' />
-      </div>
-    )
-  }
-
-  if (contentState === 'error') {
-    return (
-      <div className='rounded-2xl border border-dashed px-4 py-10 text-sm text-muted-foreground'>
-        {errorMessage || 'No draft content has been saved in this environment yet.'}
-      </div>
-    )
-  }
-
-  const previewLines = (content?.content ?? '')
-    .split('\n')
-    .slice(0, 8)
-    .join('\n')
-
-  return (
-    <div className='overflow-hidden rounded-2xl border bg-muted/10'>
-      <div className='border-b px-4 py-3 text-sm text-muted-foreground'>
-        {environment.code} draft preview
-      </div>
-      {previewLines.trim() ? (
-        <pre className='overflow-x-auto px-4 py-4 text-sm leading-6 whitespace-pre-wrap'>
-          <code>{previewLines}</code>
-        </pre>
-      ) : (
-        <div className='px-4 py-10 text-sm text-muted-foreground'>
-          No content saved for this environment yet.
-        </div>
-      )}
-    </div>
-  )
-}
-
-type EntriesResourceEditorProps = {
-  resource: ConfigResource
-  environment: Environment | null
-  canManage: boolean
-}
-
-function EntriesResourceEditor({
+function ContentResourcePreview({
+  applicationId,
   resource,
-  environment,
-  canManage,
-}: EntriesResourceEditorProps) {
-  const [entries, setEntries] = useState<ConfigEntry[]>([])
-  const [latestRelease, setLatestRelease] = useState<ConfigRelease | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [editingEntry, setEditingEntry] = useState<ConfigEntry | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!environment) {
-      setEntries([])
-      setLatestRelease(null)
-      return
-    }
-
-    const abortController = new AbortController()
-    const environmentId = environment.id
-
-    async function loadEntries() {
-      setIsLoading(true)
-      setErrorMessage('')
-
-      try {
-        const [nextEntries, nextRelease] = await Promise.all([
-          listConfigEntries(resource.id, environmentId, abortController.signal),
-          getLatestConfigRelease(resource.id, environmentId, abortController.signal).catch(
-            () => null,
-          ),
-        ])
-
-        if (abortController.signal.aborted) {
-          return
-        }
-
-        setEntries(nextEntries.toSorted((left, right) => left.key.localeCompare(right.key)))
-        setLatestRelease(nextRelease)
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          return
-        }
-
-        setErrorMessage(
-          error instanceof Error ? error.message : 'Failed to load entries.',
-        )
-      } finally {
-        if (!abortController.signal.aborted) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    void loadEntries()
-
-    return () => abortController.abort()
-  }, [environment, resource.id])
-
-  const releaseEntryMap = useMemo(() => {
-    if (!latestRelease?.snapshot) {
-      return new Map<string, ReleasedEntrySnapshot>()
-    }
-
-    try {
-      const parsed = JSON.parse(latestRelease.snapshot)
-      if (!Array.isArray(parsed)) {
-        return new Map<string, ReleasedEntrySnapshot>()
-      }
-
-      return new Map(
-        parsed
-          .filter((item): item is ReleasedEntrySnapshot => typeof item?.key === 'string')
-          .map((item) => [item.key, item]),
-      )
-    } catch {
-      return new Map<string, ReleasedEntrySnapshot>()
-    }
-  }, [latestRelease])
-
-  const tableRows = useMemo(
-    () =>
-      entries.map((entry) => ({
-        entry,
-        status: getEntryReleaseStatus(entry, releaseEntryMap),
-      })),
-    [entries, releaseEntryMap],
-  )
-
-  const handleSaveEntry = async (
-    event: FormEvent<HTMLFormElement>,
-    mode: 'create' | 'edit',
-    currentKey?: string,
-  ) => {
-    event.preventDefault()
-
-    if (!environment) {
-      return
-    }
-
-    setIsSubmitting(true)
-    setErrorMessage('')
-
-    const formData = new FormData(event.currentTarget)
-    const payload: ConfigEntryPayload = {
-      key: currentKey ?? String(formData.get('key') ?? ''),
-      value: String(formData.get('value') ?? ''),
-      valueType: String(formData.get('valueType') ?? ''),
-      description: String(formData.get('description') ?? ''),
-    }
-
-    try {
-      const savedEntry = await saveConfigEntry(resource.id, environment.id, payload)
-
-      setEntries((current) =>
-        current
-          .filter((entry) => entry.id !== savedEntry.id && entry.key !== savedEntry.key)
-          .concat(savedEntry)
-          .toSorted((left, right) => left.key.localeCompare(right.key)),
-      )
-
-      if (mode === 'create') {
-        setIsCreateOpen(false)
-      } else {
-        setEditingEntry(null)
-      }
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to save entry.',
-      )
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleDeleteEntry = async (entryId: number) => {
-    if (!environment) {
-      return
-    }
-
-    setDeletingEntryId(entryId)
-    setErrorMessage('')
-
-    try {
-      await deleteConfigEntry(resource.id, environment.id, entryId)
-      setEntries((current) => current.filter((entry) => entry.id !== entryId))
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to delete entry.',
-      )
-    } finally {
-      setDeletingEntryId(null)
-    }
-  }
-
-  if (!environment) {
-    return (
-      <div className='rounded-2xl border bg-muted/20 px-4 py-10 text-sm text-muted-foreground'>
-        Create an environment first to edit KV resources.
-      </div>
-    )
-  }
+  runtime,
+}: ContentResourcePreviewProps) {
+  const preview = runtime.content?.content?.trim() || runtime.latestRelease?.snapshot?.trim() || ''
 
   return (
-    <div className='space-y-4'>
-      <div className='flex flex-col gap-3 rounded-2xl border bg-muted/10 p-4 md:flex-row md:items-center md:justify-between'>
-        <div className='space-y-1'>
-          <p className='text-sm font-medium'>KV entries for {environment.code}</p>
-          <p className='text-sm text-muted-foreground'>
-            Edit configuration items directly here. Each row can be updated or removed independently.
-          </p>
+    <div className='space-y-3'>
+      <div className='flex items-center justify-between gap-3'>
+        <div className='text-sm text-muted-foreground'>
+          Previewing the current draft for this text configuration.
         </div>
         <div className='flex items-center gap-2'>
-          <Badge variant='outline'>{entries.length} items</Badge>
-          {canManage ? (
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button type='button' variant='outline'>
-                  <Plus className='size-4' />
-                  Add Entry
-                </Button>
-              </DialogTrigger>
-              <DialogContent className='sm:max-w-lg'>
-                <DialogHeader>
-                  <DialogTitle>Create KV entry</DialogTitle>
-                  <DialogDescription>
-                    Add a new key-value item to {resource.name} in {environment.code}.
-                  </DialogDescription>
-                </DialogHeader>
-                <form className='space-y-4' onSubmit={(event) => void handleSaveEntry(event, 'create')}>
-                  <div className='grid gap-4 md:grid-cols-2'>
-                    <div className='flex flex-col gap-2'>
-                      <Label htmlFor={`entry-key-create-${resource.id}`}>Key</Label>
-                      <Input
-                        id={`entry-key-create-${resource.id}`}
-                        name='key'
-                        placeholder='feature.toggle'
-                        required
-                      />
-                    </div>
-                    <div className='flex flex-col gap-2'>
-                      <Label htmlFor={`entry-type-create-${resource.id}`}>Value Type</Label>
-                      <Input
-                        id={`entry-type-create-${resource.id}`}
-                        name='valueType'
-                        placeholder='string'
-                      />
-                    </div>
-                  </div>
-
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor={`entry-value-create-${resource.id}`}>Value</Label>
-                    <Input
-                      id={`entry-value-create-${resource.id}`}
-                      name='value'
-                      placeholder='true'
-                      required
-                    />
-                  </div>
-
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor={`entry-description-create-${resource.id}`}>Description</Label>
-                    <Input
-                      id={`entry-description-create-${resource.id}`}
-                      name='description'
-                      placeholder='Controls whether the feature is enabled'
-                    />
-                  </div>
-
-                  {errorMessage ? <p className='text-sm text-destructive'>{errorMessage}</p> : null}
-
-                  <DialogFooter>
-                    <Button type='submit' disabled={isSubmitting}>
-                      {isSubmitting ? <LoaderCircle className='size-4 animate-spin' /> : null}
-                      Save Entry
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            className='rounded-xl'
+            onClick={() => {
+              if (!preview) {
+                return
+              }
+              void navigator.clipboard.writeText(preview)
+            }}
+          >
+            <Copy className='size-3.5' />
+            Copy
+          </Button>
+          <Button type='button' variant='outline' size='sm' asChild className='rounded-xl'>
+            <Link
+              to='/applications/$applicationId/resources/$resourceId/content'
+              params={{
+                applicationId: String(applicationId),
+                resourceId: String(resource.id),
+              }}
+            >
+              <PencilLine className='size-3.5' />
+              Open Editor
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {errorMessage ? <p className='text-sm text-destructive'>{errorMessage}</p> : null}
-
-      {isLoading ? (
-        <div className='grid gap-3'>
-          <Skeleton className='h-28 rounded-2xl' />
-          <Skeleton className='h-28 rounded-2xl' />
-        </div>
-      ) : entries.length === 0 ? (
-        <div className='rounded-2xl border border-dashed px-4 py-10 text-sm text-muted-foreground'>
-          No entries in this environment yet.
-        </div>
-      ) : (
-        <div className='overflow-hidden rounded-2xl border'>
-          <Table>
-            <TableHeader>
-              <TableRow className='hover:bg-transparent'>
-                <TableHead className='w-[140px]'>Release Status</TableHead>
-                <TableHead className='min-w-[180px]'>Key</TableHead>
-                <TableHead className='w-[120px]'>Type</TableHead>
-                <TableHead className='min-w-[280px]'>Value</TableHead>
-                <TableHead className='min-w-[220px]'>Comment</TableHead>
-                <TableHead className='w-[180px]'>Modified At</TableHead>
-                <TableHead className='w-[160px] text-right'>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tableRows.map(({ entry, status }) => (
-                <TableRow key={entry.id} className='align-top'>
-                  <TableCell className='py-4'>
-                    <Badge className={getReleaseStatusBadgeClassName(status)} variant='secondary'>
-                      {status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className='py-4 font-mono text-sm font-semibold'>
-                    {entry.key}
-                  </TableCell>
-                  <TableCell className='py-4 text-sm'>
-                    {entry.valueType || '-'}
-                  </TableCell>
-                  <TableCell className='py-4'>
-                    <div className='max-w-xl rounded-xl bg-muted/40 px-3 py-3'>
-                      <p className='break-all font-mono text-sm leading-6'>{entry.value}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell className='py-4 text-sm text-muted-foreground'>
-                    {entry.description?.trim() || '-'}
-                  </TableCell>
-                  <TableCell className='py-4 text-sm text-muted-foreground'>
-                    {formatDateTime(entry.updatedAt)}
-                  </TableCell>
-                  <TableCell className='py-4'>
-                    <div className='flex justify-end gap-2'>
-                      {canManage ? (
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() => setEditingEntry(entry)}
-                        >
-                          <PencilLine className='size-4' />
-                          Edit
-                        </Button>
-                      ) : null}
-                      {canManage ? (
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          disabled={deletingEntryId === entry.id}
-                          onClick={() => void handleDeleteEntry(entry.id)}
-                        >
-                          {deletingEntryId === entry.id ? (
-                            <LoaderCircle className='size-4 animate-spin' />
-                          ) : (
-                            <Trash2 className='size-4' />
-                          )}
-                          Delete
-                        </Button>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      <Dialog open={editingEntry !== null} onOpenChange={(open) => !open && setEditingEntry(null)}>
-        <DialogContent className='sm:max-w-lg'>
-          <DialogHeader>
-            <DialogTitle>Edit KV entry</DialogTitle>
-            <DialogDescription>
-              Update the value and description for {editingEntry?.key ?? 'this item'} in {environment.code}.
-            </DialogDescription>
-          </DialogHeader>
-          {editingEntry ? (
-            <form
-              className='space-y-4'
-              onSubmit={(event) => void handleSaveEntry(event, 'edit', editingEntry.key)}
-            >
-              <div className='grid gap-4 md:grid-cols-2'>
-                <div className='flex flex-col gap-2'>
-                  <Label htmlFor={`entry-key-edit-${resource.id}`}>Key</Label>
-                  <Input
-                    id={`entry-key-edit-${resource.id}`}
-                    value={editingEntry.key}
-                    disabled
-                    readOnly
-                  />
-                </div>
-                <div className='flex flex-col gap-2'>
-                  <Label htmlFor={`entry-type-edit-${resource.id}`}>Value Type</Label>
-                  <Input
-                    id={`entry-type-edit-${resource.id}`}
-                    name='valueType'
-                    defaultValue={editingEntry.valueType ?? ''}
-                    placeholder='string'
-                  />
-                </div>
-              </div>
-
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor={`entry-value-edit-${resource.id}`}>Value</Label>
-                <Input
-                  id={`entry-value-edit-${resource.id}`}
-                  name='value'
-                  defaultValue={editingEntry.value}
-                  required
-                />
-              </div>
-
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor={`entry-description-edit-${resource.id}`}>Description</Label>
-                <Input
-                  id={`entry-description-edit-${resource.id}`}
-                  name='description'
-                  defaultValue={editingEntry.description ?? ''}
-                  placeholder='Controls whether the feature is enabled'
-                />
-              </div>
-
-              {errorMessage ? <p className='text-sm text-destructive'>{errorMessage}</p> : null}
-
-              <DialogFooter>
-                <Button type='submit' disabled={isSubmitting}>
-                  {isSubmitting ? <LoaderCircle className='size-4 animate-spin' /> : null}
-                  Save Changes
-                </Button>
-              </DialogFooter>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <CodeBlock language={mapResourceFormatToCodeLanguage(resource.format)}>
+        {preview || '# No content saved yet'}
+      </CodeBlock>
     </div>
   )
 }
 
-type ReleasedEntrySnapshot = {
-  key: string
-  value?: string | null
-  valueType?: string | null
-  description?: string | null
+type EntriesResourceTableProps = {
+  resource: ConfigResource
+  entries: ConfigEntry[]
+  latestReleaseEntriesByKey: Map<string, ReleaseSnapshotEntry>
+  onAddEntry: () => void
+  onEditEntry: (entry: ConfigEntry) => void
+  onDeleteEntry: (entry: ConfigEntry) => void
 }
 
-type EntryReleaseStatus = 'Published' | 'Modified' | 'Draft'
-
-function getEntryReleaseStatus(
-  entry: ConfigEntry,
-  releaseEntryMap: Map<string, ReleasedEntrySnapshot>,
-): EntryReleaseStatus {
-  const releasedEntry = releaseEntryMap.get(entry.key)
-
-  if (!releasedEntry) {
-    return 'Draft'
-  }
-
-  const isSame =
-    (releasedEntry.value ?? '') === entry.value &&
-    (releasedEntry.valueType ?? '') === (entry.valueType ?? '') &&
-    (releasedEntry.description ?? '') === (entry.description ?? '')
-
-  return isSame ? 'Published' : 'Modified'
-}
-
-function getReleaseStatusBadgeClassName(status: EntryReleaseStatus) {
-  if (status === 'Published') {
-    return 'bg-emerald-500/12 text-emerald-700 hover:bg-emerald-500/12 dark:text-emerald-300'
-  }
-  if (status === 'Modified') {
-    return 'bg-amber-500/12 text-amber-700 hover:bg-amber-500/12 dark:text-amber-300'
-  }
-
-  return 'bg-slate-500/12 text-slate-700 hover:bg-slate-500/12 dark:text-slate-300'
-}
-
-type MemberRowProps = {
-  icon: ReactNode
-  label: string
-  username: string
-  email: string
-}
-
-function MemberRow({ icon, label, username, email }: MemberRowProps) {
+function EntriesResourceTable({
+  resource,
+  entries,
+  latestReleaseEntriesByKey,
+  onAddEntry,
+  onEditEntry,
+  onDeleteEntry,
+}: EntriesResourceTableProps) {
   return (
-    <div className='flex items-start gap-3 rounded-xl border p-4'>
-      <div className='mt-0.5 text-muted-foreground'>{icon}</div>
-      <div className='space-y-1'>
-        <p className='text-sm font-medium'>{label}</p>
-        <p className='text-sm'>{username}</p>
-        <p className='text-sm text-muted-foreground'>{email}</p>
+    <div className='space-y-3'>
+      <div className='flex items-center justify-between gap-3'>
+        <div className='text-[13px] text-muted-foreground'>
+          Inline KV editing with release-aware row status.
+        </div>
+        <Button type='button' variant='outline' size='xs' className='rounded-lg' onClick={onAddEntry}>
+          <Plus className='size-3.5' />
+          Add Entry
+        </Button>
+      </div>
+
+      <div className='overflow-hidden rounded-2xl border'>
+        <Table className='table-fixed'>
+          <TableHeader>
+            <TableRow>
+              <TableHead className='h-9 w-[120px] px-3 text-[12px]'>Release Status</TableHead>
+              <TableHead className='h-9 w-[190px] px-3 text-[12px]'>Key</TableHead>
+              <TableHead className='h-9 w-[110px] px-3 text-[12px]'>Type</TableHead>
+              <TableHead className='h-9 px-3 text-[12px]'>Value</TableHead>
+              <TableHead className='h-9 w-[200px] px-3 text-[12px]'>Comment</TableHead>
+              <TableHead className='h-9 w-[160px] px-3 text-[12px]'>Modified At</TableHead>
+              <TableHead className='h-9 w-[124px] px-3 text-right text-[12px]'>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className='px-3 py-8 text-center text-sm text-muted-foreground'>
+                  No KV entries yet for {resource.name}.
+                </TableCell>
+              </TableRow>
+            ) : (
+              entries.map((entry) => {
+                const releaseStatus = getEntryReleaseStatus(entry, latestReleaseEntriesByKey.get(entry.key))
+
+                return (
+                  <TableRow key={entry.id} className='align-top'>
+                    <TableCell className='px-3 py-1.5'>
+                      <StatusPill status={releaseStatus} />
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5'>
+                      <div className='space-y-0.5'>
+                        <div className='truncate font-medium'>{entry.key}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5 text-[12px] text-muted-foreground'>
+                      {entry.valueType ?? 'STRING'}
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5'>
+                      <code className='block max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-md bg-muted/45 px-2 py-0.5 text-[12px]'>
+                        {entry.value}
+                      </code>
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5 text-[12px] text-muted-foreground'>
+                      <span className='line-clamp-2'>{entry.description || '—'}</span>
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5 text-[12px] text-muted-foreground'>
+                      {formatDateTime(entry.updatedAt)}
+                    </TableCell>
+                    <TableCell className='px-3 py-1.5'>
+                      <div className='flex justify-end gap-1.5'>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='xs'
+                          className='rounded-md'
+                          onClick={() => onEditEntry(entry)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='xs'
+                          className='rounded-md'
+                          onClick={() => onDeleteEntry(entry)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   )
@@ -1226,41 +1378,231 @@ function MemberRow({ icon, label, username, email }: MemberRowProps) {
 
 function ApplicationDetailSkeleton() {
   return (
-    <section className='flex min-h-0 flex-1 flex-col gap-6'>
+    <section className='flex min-h-0 flex-1 flex-col gap-5'>
       <div className='space-y-2'>
-        <Skeleton className='h-4 w-40' />
-        <Skeleton className='h-10 w-72' />
-        <Skeleton className='h-5 w-[520px]' />
+        <Skeleton className='h-10 w-64 rounded-xl' />
+        <Skeleton className='h-4 w-[520px] rounded-lg' />
       </div>
 
       <div className='flex gap-3'>
-        <Skeleton className='h-10 w-56 rounded-xl' />
-        <Skeleton className='h-10 w-52 rounded-xl' />
-        <Skeleton className='h-10 flex-1 rounded-xl' />
+        <Skeleton className='h-9 w-[220px] rounded-xl' />
+        <Skeleton className='h-9 w-[180px] rounded-xl' />
+        <Skeleton className='h-9 w-[320px] rounded-xl' />
       </div>
 
-      <Skeleton className='h-[320px] rounded-2xl' />
-      <div className='grid gap-6 xl:grid-cols-[1.1fr_0.9fr]'>
-        <Skeleton className='h-[300px] rounded-2xl' />
-        <Skeleton className='h-[300px] rounded-2xl' />
+      <div className='space-y-3'>
+        <ResourceCardSkeleton />
+        <ResourceCardSkeleton />
+        <ResourceCardSkeleton />
       </div>
     </section>
   )
 }
 
-function getResourceFormatLabel(resource: ConfigResource) {
-  if (resource.type === 'ENTRIES') {
-    return 'kv'
-  }
-
-  return configFormatOptions.find((option) => option.value === resource.format)?.label ?? resource.format
+function ResourceCardSkeleton() {
+  return (
+    <div className='rounded-2xl border p-4'>
+      <div className='flex items-start justify-between gap-4'>
+        <div className='flex gap-4'>
+          <Skeleton className='size-12 rounded-xl' />
+          <div className='space-y-2'>
+            <Skeleton className='h-6 w-56 rounded-lg' />
+            <Skeleton className='h-4 w-80 rounded-lg' />
+            <Skeleton className='h-4 w-72 rounded-lg' />
+          </div>
+        </div>
+        <div className='flex gap-2'>
+          <Skeleton className='h-8 w-16 rounded-xl' />
+          <Skeleton className='h-8 w-16 rounded-xl' />
+          <Skeleton className='h-8 w-16 rounded-xl' />
+        </div>
+      </div>
+      <Skeleton className='mt-4 h-40 rounded-2xl' />
+    </div>
+  )
 }
 
-function formatDateTime(value: string) {
+function StatusDotLabel({ label }: { label: string }) {
+  const tone =
+    label === 'Published'
+      ? 'bg-emerald-500'
+      : label === 'Modified'
+        ? 'bg-amber-500'
+        : 'bg-slate-400'
+
+  return (
+    <span className='inline-flex items-center gap-2'>
+      <span className={cn('size-2 rounded-full', tone)} />
+      {label}
+    </span>
+  )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const className =
+    status === 'Published'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+      : status === 'Modified'
+        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
+        : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300'
+
+  return <span className={cn('inline-flex rounded-full border px-2 py-0 text-[10px] font-medium leading-5', className)}>{status}</span>
+}
+
+function ResourceFormatBadge({ resource }: { resource: ConfigResource }) {
+  const label = resource.type === 'ENTRIES' ? 'kv' : normalizeFormatLabel(resource.format).toLowerCase()
+  const className =
+    resource.type === 'ENTRIES'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+      : resource.format === 'YAML'
+        ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300'
+        : resource.format === 'JSON'
+          ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
+          : resource.format === 'PROPERTIES'
+            ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-300'
+            : resource.format === 'XML'
+              ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300'
+              : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300'
+
+  return (
+    <Badge className={cn('rounded-full border px-2 py-0 text-[10px] uppercase', className)}>
+      {label}
+    </Badge>
+  )
+}
+
+function parseReleaseSnapshotEntries(snapshot?: string | null) {
+  if (!snapshot) {
+    return [] as ReleaseSnapshotEntry[]
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as unknown
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed
+      .map((candidate) => {
+        if (!candidate || typeof candidate !== 'object') {
+          return null
+        }
+
+        const value = candidate as Record<string, unknown>
+        return {
+          key: String(value.key ?? ''),
+          value: String(value.value ?? ''),
+          valueType: value.valueType == null ? null : String(value.valueType),
+          description: value.description == null ? null : String(value.description),
+        } satisfies ReleaseSnapshotEntry
+      })
+      .filter((candidate): candidate is ReleaseSnapshotEntry => Boolean(candidate?.key))
+  } catch {
+    return []
+  }
+}
+
+function getResourceCardStatus(
+  resource: ConfigResource,
+  runtime: ResourceRuntime,
+  latestReleaseEntries: ReleaseSnapshotEntry[],
+) {
+  if (resource.type === 'CONTENT') {
+    if (!runtime.latestRelease) {
+      return runtime.content?.content ? 'Draft' : 'Unpublished'
+    }
+
+    return (runtime.content?.content ?? '') === runtime.latestRelease.snapshot
+      ? 'Published'
+      : 'Modified'
+  }
+
+  if (!runtime.latestRelease) {
+    return runtime.entries.length > 0 ? 'Draft' : 'Unpublished'
+  }
+
+  if (runtime.entries.length !== latestReleaseEntries.length) {
+    return 'Modified'
+  }
+
+  const isSame = runtime.entries.every((entry) => {
+    const released = latestReleaseEntries.find((candidate) => candidate.key === entry.key)
+    return (
+      released &&
+      released.value === entry.value &&
+      (released.valueType ?? 'STRING') === (entry.valueType ?? 'STRING') &&
+      (released.description ?? '') === (entry.description ?? '')
+    )
+  })
+
+  return isSame ? 'Published' : 'Modified'
+}
+
+function getEntryReleaseStatus(entry: ConfigEntry, releasedEntry?: ReleaseSnapshotEntry) {
+  if (!releasedEntry) {
+    return 'Draft'
+  }
+
+  const matches =
+    releasedEntry.value === entry.value &&
+    (releasedEntry.valueType ?? 'STRING') === (entry.valueType ?? 'STRING') &&
+    (releasedEntry.description ?? '') === (entry.description ?? '')
+
+  return matches ? 'Published' : 'Modified'
+}
+
+function getResourceUpdatedAt(resource: ConfigResource, runtime: ResourceRuntime) {
+  if (resource.type === 'CONTENT') {
+    return runtime.content?.updatedAt ?? runtime.latestRelease?.createdAt ?? resource.updatedAt
+  }
+
+  const timestamps = runtime.entries.map((entry) => new Date(entry.updatedAt).getTime())
+  if (timestamps.length === 0) {
+    return runtime.latestRelease?.createdAt ?? resource.updatedAt
+  }
+
+  return new Date(Math.max(...timestamps)).toISOString()
+}
+
+function getFallbackDescription(resource: ConfigResource) {
+  return resource.type === 'CONTENT'
+    ? 'Text configuration resource ready for side-by-side editing.'
+    : 'KV configuration resource managed inline for the selected environment.'
+}
+
+function normalizeFormatLabel(format: ConfigFormat) {
+  return format === 'PROPERTIES' ? 'Properties' : format
+}
+
+function mapResourceFormatToCodeLanguage(format: ConfigFormat) {
+  switch (format) {
+    case 'YAML':
+      return 'yaml' as const
+    case 'JSON':
+      return 'json' as const
+    case 'PROPERTIES':
+      return 'properties' as const
+    case 'XML':
+      return 'xml' as const
+    default:
+      return 'plaintext' as const
+  }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '—'
+  }
+
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function isNotFoundError(error: unknown) {
+  return error instanceof ApiError && error.status === 404
 }

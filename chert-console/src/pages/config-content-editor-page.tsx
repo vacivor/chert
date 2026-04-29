@@ -1,7 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import {
-  ChevronRight,
   CircleAlert,
   Clock3,
   File,
@@ -12,6 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useHeaderBreadcrumbs, type HeaderBreadcrumbItem } from '@/components/layout/header-breadcrumbs'
 import {
   Empty,
   EmptyDescription,
@@ -49,6 +49,10 @@ export function ConfigContentEditorPage() {
   const { applicationId, resourceId } = useParams({
     from: '/_protected/applications/$applicationId/resources/$resourceId/content',
   })
+  const [breadcrumbItems, setBreadcrumbItems] = useState<HeaderBreadcrumbItem[]>([
+    { label: 'Applications', href: '/applications' },
+  ])
+  useHeaderBreadcrumbs(breadcrumbItems)
   const numericApplicationId = Number(applicationId)
   const numericResourceId = Number(resourceId)
   const { resolvedTheme } = useTheme()
@@ -89,6 +93,11 @@ export function ConfigContentEditorPage() {
         setApplication(nextApplication)
         setResource(nextResource)
         setEnvironments(nextEnvironments)
+        setBreadcrumbItems([
+          { label: 'Applications', href: '/applications' },
+          { label: nextApplication.name, href: `/applications/${nextApplication.id}` },
+          ...(nextResource ? [{ label: nextResource.name }] : []),
+        ])
 
         if (nextEnvironments.length > 0) {
           setSelectedEnvironmentId((current) => current || String(nextEnvironments[0].id))
@@ -234,26 +243,10 @@ export function ConfigContentEditorPage() {
   }
 
   return (
-    <section className='flex min-h-0 flex-1 flex-col gap-6'>
-      <div className='space-y-4'>
-        <div className='flex items-center gap-2 text-sm text-muted-foreground'>
-          <Link to='/applications' className='hover:text-foreground'>
-            Applications
-          </Link>
-          <ChevronRight className='size-4' />
-          <Link
-            to='/applications/$applicationId'
-            params={{ applicationId: String(application.id) }}
-            className='hover:text-foreground'
-          >
-            {application.name}
-          </Link>
-          <ChevronRight className='size-4' />
-          <span className='text-foreground'>{resource.name}</span>
-        </div>
-
-        <div className='space-y-2'>
-          <h1 className='text-3xl font-bold tracking-tight'>Edit Configuration</h1>
+    <section className='flex min-h-0 flex-1 flex-col gap-4'>
+      <div className='space-y-2'>
+        <div className='space-y-1'>
+          <h1 className='text-[2rem] font-semibold tracking-tight'>Edit Configuration</h1>
           <p className='text-sm text-muted-foreground'>
             Review changes and edit the text configuration using side-by-side diff.
           </p>
@@ -261,26 +254,26 @@ export function ConfigContentEditorPage() {
       </div>
 
       <Card className='overflow-hidden rounded-2xl'>
-        <CardContent className='space-y-5 p-6'>
-          <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
-            <div className='flex min-w-0 items-start gap-4'>
-              <div className='flex size-14 shrink-0 items-center justify-center rounded-2xl border bg-muted/50'>
-                <File className='size-6' />
+        <CardContent className='space-y-3 p-4'>
+          <div className='flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between'>
+            <div className='flex min-w-0 items-start gap-3'>
+              <div className='flex size-11 shrink-0 items-center justify-center rounded-xl border bg-muted/50'>
+                <File className='size-5' />
               </div>
-              <div className='min-w-0 space-y-2'>
-                <div className='flex flex-wrap items-center gap-3'>
-                  <h2 className='truncate text-2xl font-semibold'>{resource.name}</h2>
-                  <Badge variant='secondary' className='rounded-full px-3 py-1 text-xs uppercase'>
+              <div className='min-w-0 space-y-1.5'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <h2 className='truncate text-xl font-semibold'>{resource.name}</h2>
+                  <Badge variant='secondary' className='rounded-full px-2 py-0 text-[10px] uppercase'>
                     {resource.format}
                   </Badge>
                 </div>
-                <p className='text-sm text-muted-foreground'>
+                <p className='text-[13px] text-muted-foreground'>
                   {resource.description?.trim() || 'Main text configuration for this application resource.'}
                 </p>
-                <div className='flex flex-wrap items-center gap-2 pt-1'>
-                  <div className='min-w-44'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <div className='min-w-40'>
                     <Select value={selectedEnvironmentId} onValueChange={setSelectedEnvironmentId}>
-                      <SelectTrigger id='content-environment' className='w-full'>
+                      <SelectTrigger id='content-environment' className='h-8 w-full rounded-xl'>
                         <SelectValue placeholder='Environment' />
                       </SelectTrigger>
                       <SelectContent>
@@ -294,12 +287,14 @@ export function ConfigContentEditorPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Badge variant='outline'>Format: {resource.format}</Badge>
-                  <Badge variant='outline'>
+                  <Badge variant='outline' className='rounded-full px-2 py-0 text-[10px] uppercase'>
+                    {resource.format}
+                  </Badge>
+                  <Badge variant='outline' className='rounded-full px-2 py-0 text-[10px] uppercase'>
                     Status: {diffSummary.total > 0 ? 'Draft' : 'Synced'}
                   </Badge>
                 </div>
-                <div className='flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-sm text-muted-foreground'>
+                <div className='flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground'>
                   <span className='flex items-center gap-2'>
                     <Clock3 className='size-4' />
                     Last modified: {latestSavedAt ? formatDateTime(latestSavedAt) : 'No draft saved yet'}
@@ -309,11 +304,13 @@ export function ConfigContentEditorPage() {
               </div>
             </div>
 
-            <div className='flex flex-wrap items-center gap-2 xl:justify-end'>
+            <div className='flex flex-wrap items-center gap-1.5 xl:justify-end'>
               <Button
                 type='button'
                 variant='outline'
+                size='xs'
                 asChild
+                className='rounded-lg'
               >
                 <Link to='/applications/$applicationId' params={{ applicationId: String(application.id) }}>
                   Cancel
@@ -321,6 +318,8 @@ export function ConfigContentEditorPage() {
               </Button>
               <Button
                 type='button'
+                size='xs'
+                className='rounded-lg'
                 disabled={!selectedEnvironmentId || isSaving}
                 onClick={() => void handleSave()}
               >
@@ -340,18 +339,18 @@ export function ConfigContentEditorPage() {
       </Card>
 
       <Card className='min-h-0 overflow-hidden rounded-2xl'>
-        <CardHeader className='border-b'>
-          <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-            <div className='space-y-1'>
-              <CardTitle>Diff Editor</CardTitle>
+        <CardHeader className='border-b px-4 py-3'>
+          <div className='flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between'>
+            <div className='space-y-0.5'>
+              <CardTitle className='text-base'>Diff Editor</CardTitle>
               <CardDescription>
                 Compare the latest release with the current draft and edit directly on the modified side.
               </CardDescription>
             </div>
             <div className='flex flex-wrap items-center gap-2 text-sm'>
-              <Badge variant='outline'>Original: latest release</Badge>
-              <Badge variant='outline'>Modified: draft</Badge>
-              <Badge variant='secondary' className='rounded-full px-3 py-1'>
+              <Badge variant='outline' className='rounded-full px-2 py-0 text-[10px] uppercase'>Original: latest release</Badge>
+              <Badge variant='outline' className='rounded-full px-2 py-0 text-[10px] uppercase'>Modified: draft</Badge>
+              <Badge variant='secondary' className='rounded-full px-2 py-0 text-[10px] uppercase'>
                 {diffSummary.total} changes
               </Badge>
             </div>
@@ -366,7 +365,7 @@ export function ConfigContentEditorPage() {
             }
           >
             <MonacoDiffEditor
-              height='68vh'
+              height='60vh'
               language={monacoLanguage}
               theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
               original={diff?.oldContent ?? ''}
@@ -381,7 +380,7 @@ export function ConfigContentEditorPage() {
               }}
               options={{
                 automaticLayout: true,
-                fontSize: 14,
+                fontSize: 13,
                 minimap: { enabled: false },
                 renderSideBySide: true,
                 originalEditable: false,
@@ -394,13 +393,13 @@ export function ConfigContentEditorPage() {
       </Card>
 
       <Card className='rounded-2xl'>
-        <CardHeader>
-          <CardTitle>Change Summary</CardTitle>
+        <CardHeader className='px-4 py-3'>
+          <CardTitle className='text-base'>Change Summary</CardTitle>
           <CardDescription>
             Lightweight summary of the current draft compared with the latest release.
           </CardDescription>
         </CardHeader>
-        <CardContent className='flex flex-wrap items-center gap-3'>
+        <CardContent className='flex flex-wrap items-center gap-2 px-4 pb-4 pt-0'>
           <SummaryBadge tone='amber' label={`${diffSummary.modified} modified`} />
           <SummaryBadge tone='emerald' label={`${diffSummary.added} added`} />
           <SummaryBadge tone='rose' label={`${diffSummary.deleted} deleted`} />
@@ -412,15 +411,15 @@ export function ConfigContentEditorPage() {
 
 function ContentEditorSkeleton() {
   return (
-    <section className='flex min-h-0 flex-1 flex-col gap-6'>
-      <div className='space-y-3'>
+    <section className='flex min-h-0 flex-1 flex-col gap-4'>
+      <div className='space-y-2'>
         <Skeleton className='h-4 w-48' />
-        <Skeleton className='h-10 w-64' />
+        <Skeleton className='h-9 w-64' />
         <Skeleton className='h-5 w-[520px]' />
       </div>
-      <Skeleton className='h-[220px] rounded-2xl' />
-      <Skeleton className='h-[760px] rounded-2xl' />
-      <Skeleton className='h-[140px] rounded-2xl' />
+      <Skeleton className='h-[180px] rounded-2xl' />
+      <Skeleton className='h-[680px] rounded-2xl' />
+      <Skeleton className='h-[108px] rounded-2xl' />
     </section>
   )
 }
@@ -500,5 +499,5 @@ function SummaryBadge({ label, tone }: SummaryBadgeProps) {
         ? 'border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:border-emerald-900 dark:text-emerald-300'
         : 'border-rose-200 bg-rose-500/10 text-rose-700 dark:border-rose-900 dark:text-rose-300'
 
-  return <span className={`rounded-full border px-3 py-1 text-sm ${className}`}>{label}</span>
+  return <span className={`rounded-full border px-2 py-0 text-[10px] font-medium leading-5 uppercase ${className}`}>{label}</span>
 }
