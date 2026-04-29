@@ -26,6 +26,8 @@ spec:
           env:
             - name: CHERT_DB_URL
               value: jdbc:postgresql://10.10.1.141:5432/chert
+            - name: CHERT_JPA_DDL_AUTO
+              value: update
           ports:
             - name: http
               containerPort: 80
